@@ -1,14 +1,19 @@
 #file: noinspection SpellCheckingInspection
+main: net.Alexxiconify.alexxAutoWarn.AlexxAutoWarn
+version: 1.0.0 # Make sure this matches your plugin version
+api-version: 1.20 # Adjust this to your Minecraft server's API version (e.g., 1.19, 1.20, 1.21)
 name: AlexxAutoWarn
-version: '1.0.0-alpha'
-main: net.Alexxiconify.alexxAutoWarn.AlexxsAutoWarn.AlexxAutoWarn
-api-version: '1.21'
 commands:
-  ainformset: # Renamed from lzdset
-    description: Manages AutoInform zones and banned materials.
-    usage: /ainformset <subcommand>
-    permission: autoinform.admin.set # Renamed permission
+  autoinform:
+    description: Manages AutoInform zones and settings.
+    usage: /<command> <subcommand>
+    aliases: [ainform,awi] # This defines 'ainform' as an alternative command name
+    permission: autoinform.admin.set
+    permission-message: You do not have permission to use this command.
 permissions:
-  autoinform.admin.set: # Renamed permission
-    description: Allows access to AutoInform zone and banned material setting commands.
+  autoinform.admin.set:
+    description: Allows setting and managing AutoInform zones.
+    default: op
+  autoinform.alert.receive:
+    description: Allows receiving alerts for banned material placement.
     default: op

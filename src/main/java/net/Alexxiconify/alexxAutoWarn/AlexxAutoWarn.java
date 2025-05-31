@@ -1,4 +1,5 @@
-package net.Alexxiconify.alexxAutoWarn.AlexxsAutoWarn;
+package net.Alexxiconify.alexxAutoWarn; // Corrected package statement
+
 import net.coreprotect.CoreProtect;
 import net.coreprotect.CoreProtectAPI;
 import org.bukkit.Bukkit;
@@ -42,7 +43,7 @@ import java.util.stream.Collectors;
 public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecutor, TabCompleter {
 
  // --- Plugin Constants ---
- private static final String COMMAND_NAME = "ainformset";
+ private static final String COMMAND_NAME = "autoinform"; // Changed command name
  private static final String PERMISSION_ADMIN_SET = "autoinform.admin.set";
  private static final String PERMISSION_ALERT_RECEIVE = "autoinform.alert.receive";
  private static final String WAND_KEY_STRING = "ainform_wand";
@@ -306,7 +307,7 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
 
  @Override
  public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, @NotNull String[] args) {
-  if (!command.getName().equalsIgnoreCase(COMMAND_NAME)) return false;
+  if (!command.getName().equalsIgnoreCase(COMMAND_NAME) && !command.getName().equalsIgnoreCase("ainform")) return false; // Check for alias too
 
   if (!(sender instanceof Player player)) {
    if (args.length == 1 && args[0].equalsIgnoreCase("reload")) {
@@ -565,7 +566,13 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
 
  @Override
  public List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command cmd, @NotNull String alias, @NotNull String[] args) {
-  if (!cmd.getName().equalsIgnoreCase(COMMAND_NAME) || !sender.hasPermission(PERMISSION_ADMIN_SET)) {
+  // Use COMMAND_NAME for primary check, and alias for secondary if needed.
+  // The command.getName() will be either "autoinform" or "ainform"
+  if (!cmd.getName().equalsIgnoreCase(COMMAND_NAME) && !cmd.getName().equalsIgnoreCase("ainform")) {
+   return Collections.emptyList();
+  }
+
+  if (!sender.hasPermission(PERMISSION_ADMIN_SET)) {
    return Collections.emptyList();
   }
 
