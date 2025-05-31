@@ -1,4 +1,4 @@
-package net.Alexxiconify.alexxAutoWarn; // Corrected package statement
+package net.Alexxiconify.alexxAutoWarn;
 
 import net.coreprotect.CoreProtect;
 import net.coreprotect.CoreProtectAPI;
@@ -27,6 +27,7 @@ import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.jetbrains.annotations.NotNull;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -39,13 +40,13 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-@SuppressWarnings("ALL") // Suppress warnings for Java 21+ preview features like String Templates
 public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecutor, TabCompleter {
 
  // --- Plugin Constants ---
- private static final String COMMAND_NAME = "autoinform"; // Changed command name
+ private static final String COMMAND_NAME = "autoinform";
  private static final String PERMISSION_ADMIN_SET = "autoinform.admin.set";
  private static final String PERMISSION_ALERT_RECEIVE = "autoinform.alert.receive";
+ private static final String PERMISSION_BYPASS = "autoinform.bypass";
  private static final String WAND_KEY_STRING = "ainform_wand";
  private static final String WAND_DISPLAY_NAME = ChatColor.GOLD + "" + ChatColor.BOLD + "AutoInform Zone Selector Wand";
  private static final List<String> WAND_LORE = Arrays.asList(
@@ -53,6 +54,9 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
          ChatColor.GRAY + "Right-click: Set Position 2"
  );
  private static final String PLUGIN_PREFIX = ChatColor.RED + "[AutoInform] " + ChatColor.YELLOW;
+
+ // --- Configurable Messages ---
+ private final Map<String, String> messages = new HashMap<>();
 
 
  // --- Instance Variables ---
@@ -70,12 +74,13 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
   this.coreProtectAPI = getCoreProtectAPI();
 
   if (this.coreProtectAPI == null) {
-   getLogger().warning("CoreProtect API not found! Related functionality might be affected.");
+   getLogger().warning(getMessage("plugin-coreprotect-not-found"));
   } else {
-   getLogger().info("CoreProtect API hooked successfully.");
+   getLogger().info(getMessage("plugin-coreprotect-hooked"));
   }
 
   saveDefaultConfig();
+  loadMessagesFromConfig();
   loadZonesFromConfig();
   loadBannedMaterialsFromConfig();
 
@@ -83,23 +88,42 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
   Objects.requireNonNull(getCommand(COMMAND_NAME)).setExecutor(this);
   Objects.requireNonNull(getCommand(COMMAND_NAME)).setTabCompleter(this);
 
-  getLogger().info("AutoInform enabled!");
+  getLogger().info(getMessage("plugin-enabled"));
   if (definedZones.isEmpty()) {
-   getLogger().warning(STR."No AutoInform zones are currently defined. Use /\{COMMAND_NAME} commands to define them.");
+   getLogger().warning(getMessage("plugin-warning-no-zones").replace("{COMMAND_NAME}", COMMAND_NAME));
   } else {
-   getLogger().info(STR."\{definedZones.size()} AutoInform zone(s) loaded.");
+   getLogger().info(getMessage("plugin-success-zones-loaded").replace("{count}", String.valueOf(definedZones.size())));
   }
-  getLogger().info(STR."Currently banned materials: \{formatMaterialList(bannedMaterials)}");
+  getLogger().info(getMessage("plugin-current-banned-materials").replace("{materials}", formatMaterialList(bannedMaterials)));
  }
 
  @Override
  public void onDisable() {
-  getLogger().info("AutoInform disabled!");
+  getLogger().info(getMessage("plugin-disabled"));
   playerZoneSelections.clear();
   playerWandPos1.clear();
   playerWandPos2.clear();
   definedZones.clear();
   bannedMaterials.clear();
+  messages.clear();
+ }
+
+ /** Loads all custom messages from config.yml. */
+ private void loadMessagesFromConfig() {
+  messages.clear();
+  FileConfiguration config = getConfig();
+  ConfigurationSection messagesSection = config.getConfigurationSection("messages");
+
+  if (messagesSection != null) {
+   for (String key : messagesSection.getKeys(false)) {
+    messages.put(key, ChatColor.translateAlternateColorCodes('&', Objects.requireNonNull(messagesSection.getString(key))));
+   }
+  }
+ }
+
+ /** Gets a message from the loaded messages, with placeholders replaced. */
+ private String getMessage(String key) {
+  return messages.getOrDefault(key, "§cError: Message '" + key + "' not found in config.yml!");
  }
 
  /** Loads all AutoInform zones from config.yml. */
@@ -109,33 +133,50 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
   ConfigurationSection zonesSection = config.getConfigurationSection("zones");
 
   if (zonesSection == null) {
-   getLogger().info("No 'zones' section found in config.yml. No zones loaded.");
+   getLogger().info(getMessage("plugin-no-zones-in-config"));
    return;
   }
 
   for (String zoneName : zonesSection.getKeys(false)) {
    ConfigurationSection zoneConfig = zonesSection.getConfigurationSection(zoneName);
    if (zoneConfig == null) {
-    getLogger().warning(STR."Invalid configuration for zone '\{zoneName}'. Skipping.");
+    getLogger().warning(getMessage("plugin-invalid-zone-config").replace("{zone_name}", zoneName));
     continue;
    }
 
    String worldName = zoneConfig.getString("world");
    World world = Bukkit.getWorld(worldName);
    if (world == null) {
-    getLogger().severe(STR."World '\{worldName}' for zone '\{zoneName}' not found! This zone will not be active.");
+    getLogger().severe(getMessage("plugin-world-not-found").replace("{world_name}", worldName).replace("{zone_name}", zoneName));
     continue;
    }
 
    try {
     Location corner1 = new Location(world, zoneConfig.getDouble("corner1.x"), zoneConfig.getDouble("corner1.y"), zoneConfig.getDouble("corner1.z"));
     Location corner2 = new Location(world, zoneConfig.getDouble("corner2.x"), zoneConfig.getDouble("corner2.y"), zoneConfig.getDouble("corner2.z"));
-    boolean denyPlacement = zoneConfig.getBoolean("deny-placement", false);
 
-    definedZones.put(zoneName, new AutoInformZone(zoneName, world, corner1, corner2, denyPlacement));
-    getLogger().info(STR."Loaded zone '\{zoneName}' in world '\{worldName}' (Deny: \{denyPlacement}).");
+    // Load default action
+    ZoneAction defaultAction = ZoneAction.valueOf(zoneConfig.getString("default-material-action", "ALERT").toUpperCase());
+
+    // Load material-specific actions
+    Map<Material, ZoneAction> materialActions = new HashMap<>();
+    ConfigurationSection materialActionsSection = zoneConfig.getConfigurationSection("material-actions");
+    if (materialActionsSection != null) {
+     for (String materialName : materialActionsSection.getKeys(false)) {
+      try {
+       Material material = Material.valueOf(materialName.toUpperCase());
+       ZoneAction action = ZoneAction.valueOf(Objects.requireNonNull(materialActionsSection.getString(materialName)).toUpperCase());
+       materialActions.put(material, action);
+      } catch (IllegalArgumentException e) {
+       getLogger().warning("Invalid material or action type in zone '" + zoneName + "' for material '" + materialName + "'. Skipping.");
+      }
+     }
+    }
+
+    definedZones.put(zoneName, new AutoInformZone(zoneName, world, corner1, corner2, defaultAction, materialActions));
+    getLogger().info("Loaded zone '" + zoneName + "' in world '" + worldName + "' (Default Action: " + defaultAction + ").");
    } catch (Exception e) {
-    getLogger().severe(STR."Error loading coordinates for zone '\{zoneName}': \{e.getMessage()}. Skipping.");
+    getLogger().severe(getMessage("plugin-error-loading-zone-coords").replace("{zone_name}", zoneName).replace("{message}", e.getMessage()));
    }
   }
  }
@@ -147,7 +188,7 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
 
   if (!definedZones.isEmpty()) {
    for (AutoInformZone zone : definedZones.values()) {
-    String path = STR."zones.\{zone.getName()}.";
+    String path = "zones." + zone.getName() + ".";
     config.set(path + "world", zone.getWorld().getName());
     config.set(path + "corner1.x", zone.getCorner1().getX());
     config.set(path + "corner1.y", zone.getCorner1().getY());
@@ -155,7 +196,16 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
     config.set(path + "corner2.x", zone.getCorner2().getX());
     config.set(path + "corner2.y", zone.getCorner2().getY());
     config.set(path + "corner2.z", zone.getCorner2().getZ());
-    config.set(path + "deny-placement", zone.shouldDenyPlacement());
+    config.set(path + "default-material-action", zone.getDefaultAction().name());
+
+    // Save material-specific actions
+    if (!zone.getMaterialSpecificActions().isEmpty()) {
+     zone.getMaterialSpecificActions().forEach((material, action) ->
+             config.set(path + "material-actions." + material.name(), action.name())
+     );
+    } else {
+     config.set(path + "material-actions", null); // Remove section if empty
+    }
    }
   }
   saveConfig();
@@ -171,7 +221,7 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
    try {
     bannedMaterials.add(Material.valueOf(name.toUpperCase()));
    } catch (IllegalArgumentException e) {
-    getLogger().warning(STR."Invalid material name '\{name}' found in config.yml banned-materials list. Skipping.");
+    getLogger().warning(getMessage("plugin-invalid-banned-material-config").replace("{name}", name));
    }
   }
  }
@@ -190,14 +240,14 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
    CoreProtectAPI api = coreProtect.getAPI();
    if (api != null && api.isEnabled()) {
     if (api.APIVersion() < 10) {
-     getLogger().warning(STR."CoreProtect API version is outdated (found: \{api.APIVersion()}). Please update CoreProtect.");
+     getLogger().warning(getMessage("plugin-coreprotect-api-outdated").replace("{version}", String.valueOf(api.APIVersion())));
     }
     return api;
    } else {
-    getLogger().warning("CoreProtect API is not enabled.");
+    getLogger().warning(getMessage("plugin-coreprotect-api-disabled"));
    }
   } else {
-   getLogger().warning("CoreProtect plugin not found or is not an instance of CoreProtect.");
+   getLogger().warning(getMessage("plugin-coreprotect-not-found"));
   }
   return null;
  }
@@ -222,33 +272,53 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
 
  /** Processes banned material placement: logs, alerts staff, and determines if denied. */
  private boolean processBannedMaterialPlacement(Player player, Location location, Material material) {
-  if (!bannedMaterials.contains(material)) return false;
+  // If player has bypass permission, do nothing
+  if (player.hasPermission(PERMISSION_BYPASS)) {
+   return false;
+  }
 
-  boolean shouldDeny = false;
+  // Only proceed if the material is in the global banned list
+  if (!bannedMaterials.contains(material)) {
+   return false;
+  }
+
   AutoInformZone applicableZone = null;
-
   for (AutoInformZone zone : definedZones.values()) {
    if (zone.contains(location)) {
     applicableZone = zone;
-    if (zone.shouldDenyPlacement()) {
-     shouldDeny = true;
-    }
-    break;
+    break; // Found the first matching zone
    }
   }
 
   if (applicableZone != null) {
-   String actionStatus = shouldDeny ? "DENIED" : "ALERTED";
-   String logMessage = STR."Player \{player.getName()} attempted to place banned material \{material.name()} at \{formatLocation(location)} in protected zone '\{applicableZone.getName()}'. Action: \{actionStatus}.";
+   ZoneAction action = applicableZone.getMaterialSpecificActions().getOrDefault(material, applicableZone.getDefaultAction());
+
+   if (action == ZoneAction.ALLOW) {
+    return false; // Explicitly allowed by zone, do nothing
+   }
+
+   String actionStatus = action == ZoneAction.DENY ? "DENIED" : "ALERTED";
+   String logMessage = "Player " + player.getName() + " attempted to place banned material " + material.name() + " at " + formatLocation(location) + " in protected zone '" + applicableZone.getName() + "'. Action: " + actionStatus + ".";
    getLogger().info(logMessage);
 
-   String staffActionColor = shouldDeny ? ChatColor.RED.toString() : ChatColor.YELLOW.toString();
-   String staffMessage = PLUGIN_PREFIX + STR."\{player.getName()} placed \{material.name()} in zone '\{applicableZone.getName()}' at \{location.getBlockX()},\{location.getBlockY()},\{location.getBlockZ()}. Action: \{staffActionColor}\{actionStatus}.";
+   String staffActionColor = action == ZoneAction.DENY ? ChatColor.RED.toString() : ChatColor.YELLOW.toString();
+   String staffMessage = getMessage("staff-alert-message")
+           .replace("{player}", player.getName())
+           .replace("{material}", material.name())
+           .replace("{zone_name}", applicableZone.getName())
+           .replace("{x}", String.valueOf(location.getBlockX()))
+           .replace("{y}", String.valueOf(location.getBlockY()))
+           .replace("{z}", String.valueOf(location.getBlockZ()))
+           .replace("{action_color}", staffActionColor)
+           .replace("{action_status}", actionStatus);
+
    Bukkit.getOnlinePlayers().stream()
            .filter(staff -> staff.hasPermission(PERMISSION_ALERT_RECEIVE))
            .forEach(staff -> staff.sendMessage(staffMessage));
+
+   return action == ZoneAction.DENY; // Cancel if DENY, otherwise don't
   }
-  return shouldDeny;
+  return false; // No applicable zone
  }
 
  @EventHandler
@@ -256,7 +326,7 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
   Location placedLocation = event.getBlockClicked().getRelative(event.getBlockFace()).getLocation();
   if (processBannedMaterialPlacement(event.getPlayer(), placedLocation, event.getBucket())) {
    event.setCancelled(true);
-   event.getPlayer().sendMessage(ChatColor.RED + "You are not allowed to place " + event.getBucket().name() + " here!");
+   event.getPlayer().sendMessage(getMessage("player-denied-placement").replace("{material}", event.getBucket().name()));
   }
  }
 
@@ -264,7 +334,7 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
  public void onBlockPlace(BlockPlaceEvent event) {
   if (processBannedMaterialPlacement(event.getPlayer(), event.getBlock().getLocation(), event.getBlock().getType())) {
    event.setCancelled(true);
-   event.getPlayer().sendMessage(ChatColor.RED + "You are not allowed to place " + event.getBlock().getType().name() + " here!");
+   event.getPlayer().sendMessage(getMessage("player-denied-placement").replace("{material}", event.getBlock().getType().name()));
   }
  }
 
@@ -279,16 +349,16 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
    if (event.getAction() == Action.LEFT_CLICK_BLOCK) {
     if (event.getClickedBlock() != null) {
      playerWandPos1.put(player.getUniqueId(), event.getClickedBlock().getLocation());
-     player.sendMessage(ChatColor.GREEN + "Position 1 set: " + formatLocation(event.getClickedBlock().getLocation()));
+     player.sendMessage(getMessage("player-wand-pos1-set").replace("{location}", formatLocation(event.getClickedBlock().getLocation())));
     } else {
-     player.sendMessage(ChatColor.YELLOW + "You must click on a block to set Position 1.");
+     player.sendMessage(getMessage("player-wand-click-block").replace("{pos_num}", "1"));
     }
    } else if (event.getAction() == Action.RIGHT_CLICK_BLOCK) {
     if (event.getClickedBlock() != null) {
      playerWandPos2.put(player.getUniqueId(), event.getClickedBlock().getLocation());
-     player.sendMessage(ChatColor.GREEN + "Position 2 set: " + formatLocation(event.getClickedBlock().getLocation()));
+     player.sendMessage(getMessage("player-wand-pos2-set").replace("{location}", formatLocation(event.getClickedBlock().getLocation())));
     } else {
-     player.sendMessage(ChatColor.YELLOW + "You must click on a block to set Position 2.");
+     player.sendMessage(getMessage("player-wand-click-block").replace("{pos_num}", "2"));
     }
    }
    return;
@@ -299,7 +369,7 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
     Location placementLocation = event.getClickedBlock().getLocation().add(0, 1, 0);
     if (processBannedMaterialPlacement(player, placementLocation, Material.TNT_MINECART)) {
      event.setCancelled(true);
-     player.sendMessage(ChatColor.RED + "You are not allowed to place " + Material.TNT_MINECART.name() + " here!");
+     player.sendMessage(getMessage("player-denied-placement").replace("{material}", Material.TNT_MINECART.name()));
     }
    }
   }
@@ -307,19 +377,19 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
 
  @Override
  public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, @NotNull String[] args) {
-  if (!command.getName().equalsIgnoreCase(COMMAND_NAME) && !command.getName().equalsIgnoreCase("ainform")) return false; // Check for alias too
+  if (!command.getName().equalsIgnoreCase(COMMAND_NAME) && !command.getName().equalsIgnoreCase("ainform")) return false;
 
   if (!(sender instanceof Player player)) {
    if (args.length == 1 && args[0].equalsIgnoreCase("reload")) {
     handleReloadCommand(sender);
     return true;
    }
-   sender.sendMessage(ChatColor.RED + STR."This command can only be run by a player (except for /\{COMMAND_NAME} reload).");
+   sender.sendMessage(getMessage("player-console-only-reload").replace("{command_name}", COMMAND_NAME));
    return true;
   }
 
   if (!player.hasPermission(PERMISSION_ADMIN_SET)) {
-   player.sendMessage(ChatColor.RED + "You do not have permission to use this command.");
+   player.sendMessage(getMessage("player-no-permission"));
    return true;
   }
 
@@ -340,7 +410,8 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
    case "reload": handleReloadCommand(player); break;
    case "clearwand": handleClearWandCommand(player); break;
    case "banned": handleBannedCommand(player, args); break;
-   case "deny": handleDenyCommand(player, args); break;
+   case "defaultaction": handleDefaultActionCommand(player, args); break;
+   case "setaction": handleSetActionCommand(player, args); break;
    default: sendHelpMessage(player); break;
   }
   return true;
@@ -350,24 +421,24 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
 
  private void handleWandCommand(Player player) {
   player.getInventory().addItem(createWand());
-  player.sendMessage(ChatColor.GREEN + "You have received the AutoInform Zone Selector Wand!");
+  player.sendMessage(getMessage("player-wand-received"));
  }
 
  private void handlePosCommand(Player player, String posType, String[] args) {
   if (args.length < 2) {
-   player.sendMessage(ChatColor.RED + STR."Usage: /\{COMMAND_NAME} \{posType} <zone_name>");
+   player.sendMessage(getMessage("player-command-usage").replace("{usage}", "/" + COMMAND_NAME + " " + posType + " <zone_name>"));
    return;
   }
   String zoneNameForPos = args[1];
   playerZoneSelections.computeIfAbsent(player.getUniqueId(), k -> new HashMap<>()).computeIfAbsent(zoneNameForPos, k -> new HashMap<>()).put(posType, player.getLocation());
-  player.sendMessage(ChatColor.GREEN + STR."Position '\{posType}' set for zone '\{zoneNameForPos}' to your current location: \{formatLocation(player.getLocation())}");
+  player.sendMessage(getMessage("player-wand-pos" + posType.substring(3) + "-set").replace("{location}", formatLocation(player.getLocation())));
   playerWandPos1.remove(player.getUniqueId());
   playerWandPos2.remove(player.getUniqueId());
  }
 
  private void handleDefineCommand(Player player, String[] args) {
   if (args.length < 2) {
-   player.sendMessage(ChatColor.RED + STR."Usage: /\{COMMAND_NAME} define <zone_name>");
+   player.sendMessage(getMessage("player-command-usage").replace("{usage}", "/" + COMMAND_NAME + " define <zone_name>"));
    return;
   }
   String zoneToDefine = args[1];
@@ -377,7 +448,7 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
   if (p1 == null || p2 == null) {
    Map<String, Location> playerSelections = playerZoneSelections.getOrDefault(player.getUniqueId(), Collections.emptyMap()).get(zoneToDefine);
    if (playerSelections == null || !playerSelections.containsKey("pos1") || !playerSelections.containsKey("pos2")) {
-    player.sendMessage(ChatColor.RED + STR."You must set both positions for zone '\{zoneToDefine}' first using the wand or /\{COMMAND_NAME} \{zoneToDefine} pos1 and /\{COMMAND_NAME} \{zoneToDefine} pos2.");
+    player.sendMessage(getMessage("player-command-usage").replace("{usage}", "You must set both positions for zone '" + zoneToDefine + "' first using the wand or /" + COMMAND_NAME + " " + zoneToDefine + " pos1 and /" + COMMAND_NAME + " " + zoneToDefine + " pos2."));
     return;
    }
    p1 = playerSelections.get("pos1");
@@ -388,20 +459,31 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
   }
 
   if (!p1.getWorld().equals(p2.getWorld())) {
-   player.sendMessage(ChatColor.RED + "Both positions must be in the same world.");
+   player.sendMessage(getMessage("player-positions-same-world"));
    playerWandPos1.remove(player.getUniqueId());
    playerWandPos2.remove(player.getUniqueId());
    return;
   }
 
-  boolean currentDenySetting = definedZones.containsKey(zoneToDefine) && definedZones.get(zoneToDefine).shouldDenyPlacement();
+  // Preserve existing settings or use defaults
+  ZoneAction currentDefaultAction = ZoneAction.ALERT;
+  Map<Material, ZoneAction> currentMaterialActions = new HashMap<>();
 
-  definedZones.put(zoneToDefine, new AutoInformZone(zoneToDefine, p1.getWorld(), p1, p2, currentDenySetting));
+  if (definedZones.containsKey(zoneToDefine)) {
+   AutoInformZone existingZone = definedZones.get(zoneToDefine);
+   currentDefaultAction = existingZone.getDefaultAction();
+   currentMaterialActions.putAll(existingZone.getMaterialSpecificActions());
+  }
+
+  definedZones.put(zoneToDefine, new AutoInformZone(zoneToDefine, p1.getWorld(), p1, p2, currentDefaultAction, currentMaterialActions));
   saveZonesToConfig();
-  player.sendMessage(ChatColor.GREEN + STR."AutoInform zone '\{zoneToDefine}' defined and saved for world '\{p1.getWorld().getName()}'.");
-  player.sendMessage(ChatColor.GRAY + "Corner 1: " + formatLocation(p1));
-  player.sendMessage(ChatColor.GRAY + "Corner 2: " + formatLocation(p2));
-  player.sendMessage(ChatColor.GRAY + "Deny Placement: " + currentDenySetting);
+  player.sendMessage(getMessage("player-define-zone-success")
+          .replace("{zone_name}", zoneToDefine)
+          .replace("{world_name}", p1.getWorld().getName()));
+  player.sendMessage(getMessage("player-define-zone-corners")
+          .replace("{corner1_loc}", formatLocation(p1))
+          .replace("{corner2_loc}", formatLocation(p2)));
+  player.sendMessage(getMessage("player-define-zone-deny-setting").replace("{default_action}", currentDefaultAction.name()));
 
   playerWandPos1.remove(player.getUniqueId());
   playerWandPos2.remove(player.getUniqueId());
@@ -415,15 +497,15 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
 
  private void handleRemoveCommand(Player player, String[] args) {
   if (args.length < 2) {
-   player.sendMessage(ChatColor.RED + STR."Usage: /\{COMMAND_NAME} remove <zone_name>");
+   player.sendMessage(getMessage("player-command-usage").replace("{usage}", "/" + COMMAND_NAME + " remove <zone_name>"));
    return;
   }
   String zoneToRemove = args[1];
   if (definedZones.remove(zoneToRemove) != null) {
    saveZonesToConfig();
-   player.sendMessage(ChatColor.GREEN + STR."Zone '\{zoneToRemove}' has been removed.");
+   player.sendMessage(getMessage("player-zone-removed").replace("{zone_name}", zoneToRemove));
   } else {
-   player.sendMessage(ChatColor.YELLOW + STR."Zone '\{zoneToRemove}' not found.");
+   player.sendMessage(getMessage("player-zone-not-found").replace("{zone_name}", zoneToRemove));
   }
  }
 
@@ -432,61 +514,72 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
    String zoneInfoName = args[1];
    AutoInformZone zoneInfo = definedZones.get(zoneInfoName);
    if (zoneInfo != null) {
-    player.sendMessage(ChatColor.AQUA + STR."--- AutoInform Zone: \{zoneInfo.getName()} ---");
-    player.sendMessage(ChatColor.GOLD + "World: " + ChatColor.WHITE + zoneInfo.getWorld().getName());
-    player.sendMessage(ChatColor.GOLD + "Corner 1: " + ChatColor.WHITE + formatLocation(zoneInfo.getCorner1()));
-    player.sendMessage(ChatColor.GOLD + "Corner 2: " + ChatColor.WHITE + formatLocation(zoneInfo.getCorner2()));
-    player.sendMessage(ChatColor.GOLD + "Deny Placement: " + ChatColor.WHITE + zoneInfo.shouldDenyPlacement());
+    player.sendMessage(getMessage("player-zone-info-header").replace("{zone_name}", zoneInfo.getName()));
+    player.sendMessage(getMessage("player-zone-info-world").replace("{world_name}", zoneInfo.getWorld().getName()));
+    player.sendMessage(getMessage("player-zone-info-corner1").replace("{corner1_loc}", formatLocation(zoneInfo.getCorner1())));
+    player.sendMessage(getMessage("player-zone-info-corner2").replace("{corner2_loc}", formatLocation(zoneInfo.getCorner2())));
+    player.sendMessage(getMessage("player-zone-info-default-action").replace("{default_action}", zoneInfo.getDefaultAction().name()));
+    if (!zoneInfo.getMaterialSpecificActions().isEmpty()) {
+     player.sendMessage(getMessage("player-zone-info-material-actions"));
+     zoneInfo.getMaterialSpecificActions().forEach((material, action) ->
+             player.sendMessage(getMessage("player-zone-info-material-action-entry")
+                     .replace("{material}", material.name())
+                     .replace("{action}", action.name()))
+     );
+    }
    } else {
-    player.sendMessage(ChatColor.YELLOW + STR."Zone '\{zoneInfoName}' not found.");
+    player.sendMessage(getMessage("player-zone-not-found").replace("{zone_name}", zoneInfoName));
    }
   } else {
    if (definedZones.isEmpty()) {
-    player.sendMessage(ChatColor.YELLOW + "No AutoInform zones are currently defined.");
+    player.sendMessage(getMessage("player-no-zones-defined"));
    } else {
-    player.sendMessage(ChatColor.AQUA + "--- All AutoInform Zones ---");
-    definedZones.values().forEach(zone -> player.sendMessage(ChatColor.GOLD + STR."- \{zone.getName()}: " + ChatColor.WHITE + STR."World: \{zone.getWorld().getName()}, Deny: \{zone.shouldDenyPlacement()}"));
+    player.sendMessage(getMessage("player-all-zones-header"));
+    definedZones.values().forEach(zone ->
+            player.sendMessage(ChatColor.GOLD + "- " + zone.getName() + ": " + ChatColor.WHITE + "World: " + zone.getWorld().getName() + ", Default: " + zone.getDefaultAction())
+    );
    }
   }
  }
 
  private void handleListCommand(Player player) {
   if (definedZones.isEmpty()) {
-   player.sendMessage(ChatColor.YELLOW + "No AutoInform zones are currently defined.");
+   player.sendMessage(getMessage("player-no-zones-defined"));
   } else {
-   player.sendMessage(ChatColor.AQUA + "--- Defined AutoInform Zones ---");
+   player.sendMessage(getMessage("player-defined-zones-header"));
    definedZones.keySet().forEach(zoneName -> player.sendMessage(ChatColor.GOLD + "- " + zoneName));
   }
  }
 
  private void handleReloadCommand(CommandSender sender) {
+  loadMessagesFromConfig();
   loadZonesFromConfig();
   loadBannedMaterialsFromConfig();
-  sender.sendMessage(ChatColor.GREEN + "AutoInform configuration reloaded.");
+  sender.sendMessage(getMessage("plugin-config-reloaded"));
   if (definedZones.isEmpty()) {
-   sender.sendMessage(ChatColor.YELLOW + "Warning: No zones defined in config or some worlds are invalid.");
+   sender.sendMessage(getMessage("plugin-warning-no-zones").replace("{COMMAND_NAME}", COMMAND_NAME));
   } else {
-   sender.sendMessage(ChatColor.AQUA + STR."Successfully loaded \{definedZones.size()} zone(s).");
+   sender.sendMessage(getMessage("plugin-success-zones-loaded").replace("{count}", String.valueOf(definedZones.size())));
   }
-  sender.sendMessage(ChatColor.AQUA + STR."Currently banned materials: \{formatMaterialList(bannedMaterials)}");
+  sender.sendMessage(getMessage("plugin-current-banned-materials").replace("{materials}", formatMaterialList(bannedMaterials)));
  }
 
  private void handleClearWandCommand(Player player) {
   playerWandPos1.remove(player.getUniqueId());
   playerWandPos2.remove(player.getUniqueId());
-  player.sendMessage(ChatColor.GREEN + "Your wand selections have been cleared.");
+  player.sendMessage(getMessage("player-wand-selections-cleared"));
  }
 
  private void handleBannedCommand(Player player, String[] args) {
   if (args.length < 2) {
-   player.sendMessage(ChatColor.RED + STR."Usage: /\{COMMAND_NAME} banned <add|remove|list> [material_name]");
+   player.sendMessage(getMessage("player-command-usage").replace("{usage}", "/" + COMMAND_NAME + " banned <add|remove|list> [material_name]"));
    return;
   }
   String bannedAction = args[1].toLowerCase();
   switch (bannedAction) {
    case "add":
     if (args.length < 3) {
-     player.sendMessage(ChatColor.RED + STR."Usage: /\{COMMAND_NAME} banned add <material_name>");
+     player.sendMessage(getMessage("player-command-usage").replace("{usage}", "/" + COMMAND_NAME + " banned add <material_name>"));
      return;
     }
     String materialToAdd = args[2].toUpperCase();
@@ -494,17 +587,17 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
      Material material = Material.valueOf(materialToAdd);
      if (bannedMaterials.add(material)) {
       saveBannedMaterialsToConfig();
-      player.sendMessage(ChatColor.GREEN + STR."Material '\{material.name()}' added to banned list.");
+      player.sendMessage(getMessage("player-material-added-banned").replace("{material}", material.name()));
      } else {
-      player.sendMessage(ChatColor.YELLOW + STR."Material '\{material.name()}' is already in the banned list.");
+      player.sendMessage(getMessage("player-material-already-banned").replace("{material}", material.name()));
      }
     } catch (IllegalArgumentException e) {
-     player.sendMessage(ChatColor.RED + STR."Invalid material name: '\{materialToAdd}'. Please use a valid Minecraft material name (e.g., LAVA_BUCKET, TNT).");
+     player.sendMessage(getMessage("player-invalid-material-name").replace("{material}", materialToAdd));
     }
     break;
    case "remove":
     if (args.length < 3) {
-     player.sendMessage(ChatColor.RED + STR."Usage: /\{COMMAND_NAME} banned remove <material_name>");
+     player.sendMessage(getMessage("player-command-usage").replace("{usage}", "/" + COMMAND_NAME + " banned remove <material_name>"));
      return;
     }
     String materialToRemove = args[2].toUpperCase();
@@ -512,62 +605,117 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
      Material material = Material.valueOf(materialToRemove);
      if (bannedMaterials.remove(material)) {
       saveBannedMaterialsToConfig();
-      player.sendMessage(ChatColor.GREEN + STR."Material '\{material.name()}' removed from banned list.");
+      player.sendMessage(getMessage("player-material-removed-banned").replace("{material}", material.name()));
      } else {
-      player.sendMessage(ChatColor.YELLOW + STR."Material '\{material.name()}' is not in the banned list.");
+      player.sendMessage(getMessage("player-material-not-banned").replace("{material}", material.name()));
      }
     } catch (IllegalArgumentException e) {
-     player.sendMessage(ChatColor.RED + STR."Invalid material name: '\{materialToRemove}'. Please use a valid Minecraft material name.");
+     player.sendMessage(getMessage("player-invalid-material-name").replace("{material}", materialToRemove));
     }
     break;
    case "list":
     if (bannedMaterials.isEmpty()) {
-     player.sendMessage(ChatColor.YELLOW + "No materials are currently banned.");
+     player.sendMessage(getMessage("player-no-materials-banned"));
     } else {
-     player.sendMessage(ChatColor.AQUA + "--- Banned Materials ---");
+     player.sendMessage(getMessage("player-banned-materials-header"));
      player.sendMessage(ChatColor.WHITE + formatMaterialList(bannedMaterials));
     }
     break;
    default:
-    player.sendMessage(ChatColor.RED + STR."Unknown 'banned' subcommand. Usage: /\{COMMAND_NAME} banned <add|remove|list>");
+    player.sendMessage(getMessage("player-command-usage").replace("{usage}", "/" + COMMAND_NAME + " banned <add|remove|list>"));
     break;
   }
  }
 
- private void handleDenyCommand(Player player, String[] args) {
+ private void handleDefaultActionCommand(Player player, String[] args) {
   if (args.length < 3) {
-   player.sendMessage(ChatColor.RED + STR."Usage: /\{COMMAND_NAME} deny <zone_name> <true|false>");
+   player.sendMessage(getMessage("player-command-usage").replace("{usage}", "/" + COMMAND_NAME + " defaultaction <zone_name> <DENY|ALERT|ALLOW>"));
    return;
   }
   String zoneName = args[1];
-  String valueString = args[2].toLowerCase();
-  boolean denyValue;
+  String actionString = args[2].toUpperCase();
+  ZoneAction newDefaultAction;
 
-  if ("true".equals(valueString)) {
-   denyValue = true;
-  } else if ("false".equals(valueString)) {
-   denyValue = false;
-  } else {
-   player.sendMessage(ChatColor.RED + "Invalid value. Please use 'true' or 'false'.");
+  try {
+   newDefaultAction = ZoneAction.valueOf(actionString);
+  } catch (IllegalArgumentException e) {
+   player.sendMessage(getMessage("player-invalid-action-type"));
    return;
   }
 
   AutoInformZone existingZone = definedZones.get(zoneName);
   if (existingZone == null) {
-   player.sendMessage(ChatColor.YELLOW + STR."Zone '\{zoneName}' not found.");
+   player.sendMessage(getMessage("player-zone-not-found").replace("{zone_name}", zoneName));
    return;
   }
 
-  AutoInformZone updatedZone = new AutoInformZone(existingZone.getName(), existingZone.getWorld(), existingZone.getCorner1(), existingZone.getCorner2(), denyValue);
+  AutoInformZone updatedZone = new AutoInformZone(
+          existingZone.getName(),
+          existingZone.getWorld(),
+          existingZone.getCorner1(),
+          existingZone.getCorner2(),
+          newDefaultAction,
+          existingZone.getMaterialSpecificActions()
+  );
   definedZones.put(zoneName, updatedZone);
   saveZonesToConfig();
-  player.sendMessage(ChatColor.GREEN + STR."Deny placement for zone '\{zoneName}' set to \{denyValue}.");
+  player.sendMessage(getMessage("player-deny-setting-updated").replace("{zone_name}", zoneName).replace("{action}", newDefaultAction.name()));
  }
+
+ private void handleSetActionCommand(Player player, String[] args) {
+  if (args.length < 4) {
+   player.sendMessage(getMessage("player-command-usage").replace("{usage}", "/" + COMMAND_NAME + " setaction <zone_name> <material> <DENY|ALERT|ALLOW>"));
+   return;
+  }
+  String zoneName = args[1];
+  String materialName = args[2].toUpperCase();
+  String actionString = args[3].toUpperCase();
+
+  Material material;
+  ZoneAction action;
+
+  try {
+   material = Material.valueOf(materialName);
+  } catch (IllegalArgumentException e) {
+   player.sendMessage(getMessage("player-invalid-material-name").replace("{material}", materialName));
+   return;
+  }
+
+  try {
+   action = ZoneAction.valueOf(actionString);
+  } catch (IllegalArgumentException e) {
+   player.sendMessage(getMessage("player-invalid-action-type"));
+   return;
+  }
+
+  AutoInformZone existingZone = definedZones.get(zoneName);
+  if (existingZone == null) {
+   player.sendMessage(getMessage("player-zone-not-found").replace("{zone_name}", zoneName));
+   return;
+  }
+
+  Map<Material, ZoneAction> updatedMaterialActions = new HashMap<>(existingZone.getMaterialSpecificActions());
+  updatedMaterialActions.put(material, action);
+
+  AutoInformZone updatedZone = new AutoInformZone(
+          existingZone.getName(),
+          existingZone.getWorld(),
+          existingZone.getCorner1(),
+          existingZone.getCorner2(),
+          existingZone.getDefaultAction(),
+          updatedMaterialActions
+  );
+  definedZones.put(zoneName, updatedZone);
+  saveZonesToConfig();
+  player.sendMessage(getMessage("player-material-action-updated")
+          .replace("{material}", material.name())
+          .replace("{zone_name}", zoneName)
+          .replace("{action}", action.name()));
+ }
+
 
  @Override
  public List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command cmd, @NotNull String alias, @NotNull String[] args) {
-  // Use COMMAND_NAME for primary check, and alias for secondary if needed.
-  // The command.getName() will be either "autoinform" or "ainform"
   if (!cmd.getName().equalsIgnoreCase(COMMAND_NAME) && !cmd.getName().equalsIgnoreCase("ainform")) {
    return Collections.emptyList();
   }
@@ -577,12 +725,12 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
   }
 
   if (args.length == 1) {
-   return Arrays.asList("wand", "pos1", "pos2", "define", "remove", "info", "list", "reload", "clearwand", "banned", "deny").stream()
+   return Arrays.asList("wand", "pos1", "pos2", "define", "remove", "info", "list", "reload", "clearwand", "banned", "defaultaction", "setaction").stream()
            .filter(s -> s.startsWith(args[0].toLowerCase()))
            .collect(Collectors.toList());
   } else if (args.length == 2) {
    String subCommand = args[0].toLowerCase();
-   if (Arrays.asList("pos1", "pos2", "define", "remove", "info", "deny").contains(subCommand)) {
+   if (Arrays.asList("pos1", "pos2", "define", "remove", "info", "defaultaction", "setaction").contains(subCommand)) {
     return definedZones.keySet().stream()
             .filter(s -> s.toLowerCase().startsWith(args[1].toLowerCase()))
             .collect(Collectors.toList());
@@ -591,16 +739,25 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
             .filter(s -> s.startsWith(args[1].toLowerCase()))
             .collect(Collectors.toList());
    }
-  } else if (args.length == 3 && args[0].equalsIgnoreCase("banned")) {
-   String bannedAction = args[1].toLowerCase();
-   if (bannedAction.equals("add")) {
+  } else if (args.length == 3) {
+   String subCommand = args[0].toLowerCase();
+   if (subCommand.equals("banned")) {
+    String bannedAction = args[1].toLowerCase();
+    if (bannedAction.equals("add")) {
+     return Arrays.stream(Material.values()).map(Enum::name).filter(s -> s.startsWith(args[2].toUpperCase())).collect(Collectors.toList());
+    } else if (bannedAction.equals("remove")) {
+     return bannedMaterials.stream().map(Enum::name).filter(s -> s.startsWith(args[2].toUpperCase())).collect(Collectors.toList());
+    }
+   } else if (subCommand.equals("defaultaction")) {
+    return Arrays.asList("DENY", "ALERT", "ALLOW").stream()
+            .filter(s -> s.startsWith(args[2].toUpperCase()))
+            .collect(Collectors.toList());
+   } else if (subCommand.equals("setaction")) {
     return Arrays.stream(Material.values()).map(Enum::name).filter(s -> s.startsWith(args[2].toUpperCase())).collect(Collectors.toList());
-   } else if (bannedAction.equals("remove")) {
-    return bannedMaterials.stream().map(Enum::name).filter(s -> s.startsWith(args[2].toUpperCase())).collect(Collectors.toList());
    }
-  } else if (args.length == 3 && args[0].equalsIgnoreCase("deny")) {
-   return Arrays.asList("true", "false").stream()
-           .filter(s -> s.startsWith(args[2].toLowerCase()))
+  } else if (args.length == 4 && args[0].equalsIgnoreCase("setaction")) {
+   return Arrays.asList("DENY", "ALERT", "ALLOW").stream()
+           .filter(s -> s.startsWith(args[3].toUpperCase()))
            .collect(Collectors.toList());
   }
   return Collections.emptyList();
@@ -609,18 +766,19 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
  /** Sends the help message to the player. */
  private void sendHelpMessage(Player player) {
   player.sendMessage(ChatColor.AQUA + "--- AutoInform Setter Help ---");
-  player.sendMessage(ChatColor.GOLD + STR."/\{COMMAND_NAME} wand" + ChatColor.WHITE + " - Get the selection wand.");
-  player.sendMessage(ChatColor.GOLD + STR."/\{COMMAND_NAME} <zone_name> pos1" + ChatColor.WHITE + " - Set first zone corner (manual).");
-  player.sendMessage(ChatColor.GOLD + STR."/\{COMMAND_NAME} <zone_name> pos2" + ChatColor.WHITE + " - Set second zone corner (manual).");
-  player.sendMessage(ChatColor.GOLD + STR."/\{COMMAND_NAME} <zone_name> define" + ChatColor.WHITE + " - Define/update <zone_name> using wand or manual selections.");
-  player.sendMessage(ChatColor.GOLD + STR."/\{COMMAND_NAME} <zone_name> deny <true|false>" + ChatColor.WHITE + " - Toggle placement denial for a zone.");
-  player.sendMessage(ChatColor.GOLD + STR."/\{COMMAND_NAME} remove <zone_name>" + ChatColor.WHITE + " - Remove a defined zone.");
-  player.sendMessage(ChatColor.GOLD + STR."/\{COMMAND_NAME} info [zone_name]" + ChatColor.WHITE + " - Show info for a specific zone or all zones.");
-  player.sendMessage(ChatColor.GOLD + STR."/\{COMMAND_NAME} list" + ChatColor.WHITE + " - List all defined zones.");
-  player.sendMessage(ChatColor.GOLD + STR."/\{COMMAND_NAME} clearwand" + ChatColor.WHITE + " - Clear your wand selections.");
-  player.sendMessage(ChatColor.GOLD + STR."/\{COMMAND_NAME} reload" + ChatColor.WHITE + " - Reload all zones and banned materials from config.");
-  player.sendMessage(ChatColor.GOLD + STR."/\{COMMAND_NAME} banned <add|remove|list>" + ChatColor.WHITE + " - Manage banned materials.");
-  player.sendMessage(ChatColor.YELLOW + "Note: Placement will be denied in zones set to 'deny-placement: true'. Otherwise, staff will be alerted.");
+  player.sendMessage(ChatColor.GOLD + "/" + COMMAND_NAME + " wand" + ChatColor.WHITE + " - Get the selection wand.");
+  player.sendMessage(ChatColor.GOLD + "/" + COMMAND_NAME + " <zone_name> pos1" + ChatColor.WHITE + " - Set first zone corner (manual).");
+  player.sendMessage(ChatColor.GOLD + "/" + COMMAND_NAME + " <zone_name> pos2" + ChatColor.WHITE + " - Set second zone corner (manual).");
+  player.sendMessage(ChatColor.GOLD + "/" + COMMAND_NAME + " <zone_name> define" + ChatColor.WHITE + " - Define/update <zone_name> using wand or manual selections.");
+  player.sendMessage(ChatColor.GOLD + "/" + COMMAND_NAME + " <zone_name> defaultaction <DENY|ALERT|ALLOW>" + ChatColor.WHITE + " - Set default action for a zone.");
+  player.sendMessage(ChatColor.GOLD + "/" + COMMAND_NAME + " <zone_name> setaction <material> <DENY|ALERT|ALLOW>" + ChatColor.WHITE + " - Set specific material action in a zone.");
+  player.sendMessage(ChatColor.GOLD + "/" + COMMAND_NAME + " remove <zone_name>" + ChatColor.WHITE + " - Remove a defined zone.");
+  player.sendMessage(ChatColor.GOLD + "/" + COMMAND_NAME + " info [zone_name]" + ChatColor.WHITE + " - Show info for a specific zone or all zones.");
+  player.sendMessage(ChatColor.GOLD + "/" + COMMAND_NAME + " list" + ChatColor.WHITE + " - List all defined zones.");
+  player.sendMessage(ChatColor.GOLD + "/" + COMMAND_NAME + " clearwand" + ChatColor.WHITE + " - Clear your wand selections.");
+  player.sendMessage(ChatColor.GOLD + "/" + COMMAND_NAME + " reload" + ChatColor.WHITE + " - Reload all zones and banned materials from config.");
+  player.sendMessage(ChatColor.GOLD + "/" + COMMAND_NAME + " banned <add|remove|list>" + ChatColor.WHITE + " - Manage globally banned materials.");
+  player.sendMessage(ChatColor.YELLOW + "Note: Player with 'autoinform.bypass' permission can bypass all restrictions.");
  }
 
  /** Formats a Location object into a readable string. */
@@ -637,15 +795,25 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
 }
 
 /**
- * Represents a defined AutoInform zone with two corners, a world, and a denial setting.
- * This class is immutable.
+ * Defines the possible actions for a material within a zone.
+ */
+enum ZoneAction {
+ DENY,
+ ALERT,
+ ALLOW
+}
+
+/**
+ * Represents a defined AutoInform zone with two corners, a world,
+ * a default action, and material-specific actions. This class is immutable.
  */
 class AutoInformZone {
  private final String name;
  private final World world;
  private final Location corner1;
  private final Location corner2;
- private final boolean denyPlacement;
+ private final ZoneAction defaultAction;
+ private final Map<Material, ZoneAction> materialSpecificActions;
 
  /**
   * Constructs a new AutoInformZone.
@@ -653,21 +821,25 @@ class AutoInformZone {
   * @param world The world the zone is in.
   * @param corner1 The first corner of the zone.
   * @param corner2 The second corner of the zone.
-  * @param denyPlacement True if placement should be denied in this zone, false for alerts only.
+  * @param defaultAction The default action for materials not explicitly defined.
+  * @param materialSpecificActions A map of materials to their specific actions within this zone.
   */
- public AutoInformZone(@NotNull String name, @NotNull World world, @NotNull Location corner1, @NotNull Location corner2, boolean denyPlacement) {
+ public AutoInformZone(@NotNull String name, @NotNull World world, @NotNull Location corner1, @NotNull Location corner2,
+                       @NotNull ZoneAction defaultAction, @NotNull Map<Material, ZoneAction> materialSpecificActions) {
   this.name = Objects.requireNonNull(name, "Zone name cannot be null");
   this.world = Objects.requireNonNull(world, "Zone world cannot be null");
   this.corner1 = Objects.requireNonNull(corner1, "Zone corner1 cannot be null");
   this.corner2 = Objects.requireNonNull(corner2, "Zone corner2 cannot be null");
-  this.denyPlacement = denyPlacement;
+  this.defaultAction = Objects.requireNonNull(defaultAction, "Default action cannot be null");
+  this.materialSpecificActions = Collections.unmodifiableMap(new HashMap<>(Objects.requireNonNull(materialSpecificActions, "Material specific actions map cannot be null")));
  }
 
  public String getName() { return name; }
  public World getWorld() { return world; }
  public Location getCorner1() { return corner1; }
  public Location getCorner2() { return corner2; }
- public boolean shouldDenyPlacement() { return denyPlacement; }
+ public ZoneAction getDefaultAction() { return defaultAction; }
+ public Map<Material, ZoneAction> getMaterialSpecificActions() { return materialSpecificActions; }
 
  /** Checks if a given location is within this zone's bounding box. */
  public boolean contains(@NotNull Location loc) {
@@ -693,15 +865,16 @@ class AutoInformZone {
   if (this == o) return true;
   if (o == null || getClass() != o.getClass()) return false;
   AutoInformZone that = (AutoInformZone) o;
-  return denyPlacement == that.denyPlacement &&
+  return defaultAction == that.defaultAction &&
           name.equals(that.name) &&
           world.equals(that.world) &&
           corner1.equals(that.corner1) &&
-          corner2.equals(that.corner2);
+          corner2.equals(that.corner2) &&
+          materialSpecificActions.equals(that.materialSpecificActions);
  }
 
  @Override
  public int hashCode() {
-  return Objects.hash(name, world, corner1, corner2, denyPlacement);
+  return Objects.hash(name, world, corner1, corner2, defaultAction, materialSpecificActions);
  }
 }
