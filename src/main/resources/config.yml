@@ -1,33 +1,41 @@
-# LavaZoneDetector Configuration
+# AutoInform Configuration
 
-# This section defines multiple protected zones where lava, TNT, and other
-# specified materials are restricted from being placed.
-# Each zone is defined by two opposite corners (corner1 and corner2) and a unique name.
-# You can set these values in-game using the /lzdset commands (if the plugin supports it for multiple zones),
-# or manually edit them here if you know the exact coordinates.
+# This section defines multiple protected zones.
+# Each zone can be configured to either alert staff or deny placement
+# of banned materials within its boundaries.
 zones:
-  # Example Zone 1:
+  # Example Zone 1: Alerts staff only (default behavior)
   zone_alpha: # Unique name for this zone
-    # The name of the world where this zone is located.
-    world: "world" # Replace with the actual world name (e.g., world, world_nether, world_the_end)
-    # Coordinates for the first corner of this zone.
+    world: "world"
     corner1:
       x: 0.0
-      y: 0.0
+      y: -64.0
       z: 0.0
-    # Coordinates for the second corner of this zone.
     corner2:
       x: 100.0
       y: 100.0
       z: 100.0
+    # Set to true to prevent placement of banned materials in this zone.
+    # Set to false (or omit) to only alert staff.
+    deny-placement: false
+
+  # Example Zone 2: Denies placement
+  zone_beta: # Another unique name for a different zone
+    world: "world_nether"
+    corner1:
+      x: -50.0
+      y: 30.0
+      z: -50.0
+    corner2:
+      x: 50.0
+      y: 80.0
+      z: 50.0
+    deny-placement: true # This zone will deny placement of banned materials
 
 # This section defines a list of materials that are banned from being placed
 # within any of the defined zones.
-# You can add or remove materials using the /lzdset banned add/remove commands.
+# You can add or remove materials using the /ainformset banned add/remove commands.
 banned-materials:
-  - LAVA_BUCKET # For lava placement
-  - TNT         # For TNT block placement
-  - TNT_MINECART # For TNT Minecart placement
-  # Add other material names here as needed, e.g.:
-  # - FIRE
-  # - WATER_BUCKET
+  - LAVA_BUCKET
+  - TNT
+  - TNT_MINECART
