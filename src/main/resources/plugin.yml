@@ -1,6 +1,6 @@
 #file: noinspection SpellCheckingInspection
 name: AlexxAutoWarn
-version: '1.0.0-SNAPSHOT'
+version: '1.0.0-alpha'
 main: net.Alexxiconify.alexxAutoWarn.AlexxsAutoWarn.AlexxAutoWarn
 api-version: '1.21'
 commands:
