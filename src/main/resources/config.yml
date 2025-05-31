@@ -9,7 +9,7 @@ zones:
     world: "world"
     corner1:
       x: 0.0
-      y: -64.0
+      y: 64.0
       z: 0.0
     corner2:
       x: 100.0
@@ -26,6 +26,20 @@ zones:
       TNT: ALERT          # Only alert staff for TNT placement
       WATER_BUCKET: ALLOW # Allow water placement, even if it's in the global banned-materials list
 
+    # New: Default action for item *usage* in this zone if not specified in usage-actions.
+    # Options: DENY, ALERT, ALLOW
+    default-usage-action: ALERT # New option
+
+    # New: Specific actions for item *usage* within this zone.
+    # These override the default-usage-action for the listed materials.
+    usage-actions: # New section for usage-specific actions
+      FLINT_AND_STEEL: DENY
+      ENDER_PEARL: ALERT
+      POTION: ALERT # Generic potion usage
+
+    # New: Whether to monitor chest access by players other than the placer.
+    monitor-chest-access: true # Set to true to enable chest access monitoring
+
   # Example Zone 2: Default action is DENY
   zone_beta:
     world: "world_nether"
@@ -37,11 +51,13 @@ zones:
       x: 50.0
       y: 80.0
       z: 50.0
-    default-material-action: DENY # Deny all banned materials by default in this zone
+    default-material-action: DENY
     material-actions:
-      FIRE: ALERT # But only alert for fire, don't deny
+      FIRE: ALERT
+    default-usage-action: ALERT # Default usage action for this zone
+    monitor-chest-access: false # Chest access monitoring disabled for this zone
 
-# This section defines a list of materials that are generally considered "banned".
+# This section defines a list of materials that are generally considered "banned" for *placement*.
 # Zones will only apply actions to materials present in this global list,
 # unless a specific 'ALLOW' action is defined within a zone's material-actions.
 banned-materials:
@@ -49,11 +65,22 @@ banned-materials:
   - TNT
   - TNT_MINECART
   - FIRE
-  - WATER_BUCKET # Example: Water is generally banned, but zone_alpha allows it.
+  - WATER_BUCKET
+
+# New: This section defines a list of materials that are generally considered "banned" for *usage*.
+# Zones will only apply actions to materials present in this global list,
+# unless a specific 'ALLOW' action is defined within a zone's usage-actions.
+banned-usages:
+  - FLINT_AND_STEEL
+  - POTION
+  - ENDER_PEARL
+  - FIRE_CHARGE
 
 # Customizable messages for the plugin.
 messages:
   player-denied-placement: "&cYou are not allowed to place {material} here!"
+  player-denied-usage: "&cYou are not allowed to use {material} here!" # New message
+  player-denied-chest-access: "&cYou are not allowed to access chests placed by others here!" # New message
   player-wand-pos1-set: "&aPosition 1 set: {location}"
   player-wand-pos2-set: "&aPosition 2 set: {location}"
   player-wand-click-block: "&eYou must click on a block to set Position {pos_num}."
@@ -61,7 +88,8 @@ messages:
   player-positions-same-world: "&cBoth positions must be in the same world."
   player-define-zone-success: "&aAutoInform zone '{zone_name}' defined and saved for world '{world_name}'."
   player-define-zone-corners: "&7Corner 1: {corner1_loc}\n&7Corner 2: {corner2_loc}"
-  player-define-zone-deny-setting: "&7Default Action: {default_action}"
+  player-define-zone-default-placement-action: "&7Default Placement Action: {default_action}" # Updated message
+  player-define-zone-default-usage-action: "&7Default Usage Action: {default_action}" # New message
   player-zone-removed: "&aZone '{zone_name}' has been removed."
   player-zone-not-found: "&eZone '{zone_name}' not found."
   player-no-zones-defined: "&eNo AutoInform zones are currently defined."
@@ -69,10 +97,14 @@ messages:
   player-zone-info-header: "&b--- AutoInform Zone: {zone_name} ---"
   player-zone-info-world: "&6World: &f{world_name}"
   player-zone-info-corner1: "&6Corner 1: &f{corner1_loc}"
-  player-zone-info-corner2: "&6Corner 2: &f{corner2_loc}" # CORRECTED: Was "&6Corner 62:..."
-  player-zone-info-default-action: "&6Default Action: &f{default_action}"
-  player-zone-info-material-actions: "&6Material Actions:"
+  player-zone-info-corner2: "&6Corner 2: &f{corner2_loc}"
+  player-zone-info-default-placement-action: "&6Default Placement Action: &f{default_action}" # Updated message
+  player-zone-info-default-usage-action: "&6Default Usage Action: &f{default_action}" # New message
+  player-zone-info-monitor-chest-access: "&6Monitor Chest Access: &f{status}" # New message
+  player-zone-info-material-actions: "&6Placement Actions:" # Updated message
   player-zone-info-material-action-entry: "&f  - {material}: {action}"
+  player-zone-info-usage-actions: "&6Usage Actions:" # New message
+  player-zone-info-usage-action-entry: "&f  - {material}: {action}" # New message
   player-defined-zones-header: "&b--- Defined AutoInform Zones ---"
   player-wand-selections-cleared: "&aYour wand selections have been cleared."
   player-material-added-banned: "&aMaterial '{material}' added to banned list."
@@ -81,18 +113,22 @@ messages:
   player-material-removed-banned: "&aMaterial '{material}' removed from banned list."
   player-material-not-banned: "&eMaterial '{material}' is not in the banned list."
   player-no-materials-banned: "&eNo materials are currently banned."
-  player-banned-materials-header: "&b--- Banned Materials ---"
-  player-deny-setting-updated: "&aDefault action for zone '{zone_name}' set to {action}."
-  player-material-action-updated: "&aAction for {material} in zone '{zone_name}' set to {action}."
+  player-banned-materials-header: "&b--- Banned Materials (Placement) ---" # Updated message
+  player-banned-usages-header: "&b--- Banned Materials (Usage) ---" # New message
+  player-default-action-updated: "&aDefault {type} action for zone '{zone_name}' set to {action}." # Updated message
+  player-material-action-updated: "&a{type} action for {material} in zone '{zone_name}' set to {action}." # Updated message
   player-invalid-action-type: "&cInvalid action type. Please use DENY, ALERT, or ALLOW."
   player-no-permission: "&cYou do not have permission to use this command."
   player-command-usage: "&cUsage: {usage}"
   player-console-only-reload: "&cThis command can only be run by a player (except for /{command_name} reload)."
-  staff-alert-message: "&c[AutoInform] &e{player} placed {material} in zone '{zone_name}' at {x},{y},{z}. Action: {action_color}{action_status}."
+  staff-alert-placement: "&c[AutoInform] &e{player} placed {material} in zone '{zone_name}' at {x},{y},{z}. Action: {action_color}{action_status}." # Updated message
+  staff-alert-usage: "&c[AutoInform] &e{player} used {material} in zone '{zone_name}' at {x},{y},{z}. Action: {action_color}{action_status}." # New message
+  staff-alert-chest-access: "&c[AutoInform] &e{player} accessed chest placed by {placer} in zone '{zone_name}' at {x},{y},{z}. Action: {action_color}{action_status}." # New message
   plugin-config-reloaded: "&aAutoInform configuration reloaded."
   plugin-warning-no-zones: "&eWarning: No zones defined in config or some worlds are invalid."
   plugin-success-zones-loaded: "&bSuccessfully loaded {count} zone(s)."
-  plugin-current-banned-materials: "&bCurrently banned materials: {materials}"
+  plugin-current-banned-materials: "&bCurrently banned materials (Placement): {materials}" # Updated message
+  plugin-current-banned-usages: "&bCurrently banned materials (Usage): {materials}" # New message
   plugin-enabled: "AutoInform enabled!"
   plugin-disabled: "AutoInform disabled!"
   plugin-coreprotect-not-found: "CoreProtect API not found! Related functionality might be affected."
@@ -104,3 +140,5 @@ messages:
   plugin-error-loading-zone-coords: "Error loading coordinates for zone '{zone_name}': {message}. Skipping."
   plugin-invalid-banned-material-config: "Invalid material name '{name}' found in config.yml banned-materials list. Skipping."
   plugin-no-zones-in-config: "No 'zones' section found in config.yml. No zones loaded."
+  plugin-coreprotect-lookup-failed: "CoreProtect lookup failed for block at {location}: {message}" # New message
+  plugin-coreprotect-no-placer: "Could not determine placer for block at {location} using CoreProtect." # New message
