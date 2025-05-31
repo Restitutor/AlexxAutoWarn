@@ -1,0 +1,4 @@
+name: AlexxAutoWarn
+version: '1.0.0-SNAPSHOT'
+main: net.Alexxiconify.alexxAutoWarn.AlexxAutoWarn
+api-version: '1.21'
