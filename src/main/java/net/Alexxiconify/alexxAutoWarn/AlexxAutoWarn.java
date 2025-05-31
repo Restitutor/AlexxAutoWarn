@@ -37,7 +37,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.UUID; // <--- ADD THIS LINE
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 // Note: The STR."..." syntax is a Java 21+ String Template feature.
@@ -118,7 +118,7 @@ class AutoInformZone {
  }
 }
 
-@SuppressWarnings("preview") // For String Templates if using Java < 21 with preview enabled
+@SuppressWarnings("ALL") // For String Templates if using Java < 21 with preview enabled
 public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecutor, TabCompleter {
 
  private CoreProtectAPI coreProtectAPI; // Instance variable for CoreProtect API
@@ -337,43 +337,48 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
 
  /**
   * Helper method to check if a location is within any defined zone and send a message.
+  * This method now only logs to console and alerts staff, it DOES NOT cancel the event.
   * @param player The player performing the action.
   * @param location The location of the action.
   * @param material The material being placed/used.
-  * @return true if the action should be canceled, false otherwise.
   */
- private boolean checkAndWarn(Player player, Location location, Material material) {
+ private void informStaffAndLog(Player player, Location location, Material material) {
+  // Only proceed if the material is in the banned list
   if (!bannedMaterials.contains(material)) {
-   return false;
+   return; // Not a banned material, so no action needed.
   }
 
   for (AutoInformZone zone : definedZones.values()) {
    if (zone.contains(location)) {
-    getLogger().info(STR."Player \{player.getName()} attempted to place \{material.name()} at \{formatLocation(location)} in protected zone '\{zone.getName()}'.");
-    player.sendMessage(ChatColor.RED + STR."You are not allowed to place \{material.name()} in zone '\{zone.getName()}'.");
-    return true;
+    String logMessage = STR."Player \{player.getName()} placed banned material \{material.name()} at \{formatLocation(location)} in protected zone '\{zone.getName()}'.";
+    getLogger().info(logMessage); // Log to server console
+
+    // Send message to online staff
+    String staffMessage = ChatColor.RED + "[AutoInform] " + ChatColor.YELLOW + STR."\{player.getName()} placed \{material.name()} in zone '\{zone.getName()}' at \{location.getBlockX()},\{location.getBlockY()},\{location.getBlockZ()}";
+    for (Player staff : Bukkit.getOnlinePlayers()) {
+     if (staff.hasPermission("autoinform.alert.receive")) { // New permission for receiving alerts
+      staff.sendMessage(staffMessage);
+     }
+    }
+    // Optional: Log with CoreProtect if you have custom flags or reasons
+    // if (this.coreProtectAPI != null) {
+    //    this.coreProtectAPI.logPlacement(player.getName(), location, material, null);
+    // }
+    return; // Found in a zone, processed, no need to check other zones.
    }
   }
-  return false;
  }
 
  @EventHandler
  public void onPlayerEmptyBucket(PlayerBucketEmptyEvent event) {
-  if (bannedMaterials.contains(event.getBucket())) {
-   Location placedLocation = event.getBlockClicked().getRelative(event.getBlockFace()).getLocation();
-   if (checkAndWarn(event.getPlayer(), placedLocation, event.getBucket())) {
-    event.setCancelled(true);
-   }
-  }
+  // We no longer cancel the event here, just inform staff if it's a banned material in a zone
+  informStaffAndLog(event.getPlayer(), event.getBlockClicked().getRelative(event.getBlockFace()).getLocation(), event.getBucket());
  }
 
  @EventHandler
  public void onBlockPlace(BlockPlaceEvent event) {
-  if (bannedMaterials.contains(event.getBlock().getType())) {
-   if (checkAndWarn(event.getPlayer(), event.getBlock().getLocation(), event.getBlock().getType())) {
-    event.setCancelled(true);
-   }
-  }
+  // We no longer cancel the event here, just inform staff if it's a banned material in a zone
+  informStaffAndLog(event.getPlayer(), event.getBlock().getLocation(), event.getBlock().getType());
  }
 
  @EventHandler
@@ -381,8 +386,9 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
   Player player = event.getPlayer();
   ItemStack handItem = event.getItem();
 
+  // Handle wand interactions
   if (isWand(handItem)) {
-   event.setCancelled(true);
+   event.setCancelled(true); // Still cancel for wand interactions to prevent accidental block changes
 
    if (event.getAction() == Action.LEFT_CLICK_BLOCK) {
     if (event.getClickedBlock() != null) {
@@ -399,17 +405,18 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
      player.sendMessage(ChatColor.YELLOW + "You must click on a block to set Position 2.");
     }
    }
-   return;
+   return; // Don't process other interactions if it's the wand
   }
 
+  // Handle placement of items that spawn entities (like TNT Minecart)
+  // We no longer cancel the event here, just inform staff if it's a banned material in a zone
   if (handItem != null && bannedMaterials.contains(handItem.getType())) {
    if (event.getAction() == Action.RIGHT_CLICK_BLOCK) {
     if (handItem.getType() == Material.TNT_MINECART && event.getClickedBlock() != null && event.getClickedBlock().getType().name().contains("RAIL")) {
      Location placementLocation = event.getClickedBlock().getLocation().add(0, 1, 0);
-     if (checkAndWarn(player, placementLocation, Material.TNT_MINECART)) {
-      event.setCancelled(true);
-     }
+     informStaffAndLog(player, placementLocation, Material.TNT_MINECART);
     }
+    // Add more specific checks for other entity-spawning items if needed
    }
   }
  }
@@ -434,7 +441,7 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
   }
 
   if (!player.hasPermission("autoinform.admin.set")) {
-   player.sendMessage(ChatColor.RED + "You do抔have permission to use this command.");
+   player.sendMessage(ChatColor.RED + "You do not have permission to use this command.");
    return true;
   }
 
@@ -701,6 +708,7 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
   player.sendMessage(ChatColor.GOLD + "/ainformset clearwand" + ChatColor.WHITE + " - Clear your wand selections.");
   player.sendMessage(ChatColor.GOLD + "/ainformset reload" + ChatColor.WHITE + " - Reload all zones and banned materials from config.");
   player.sendMessage(ChatColor.GOLD + "/ainformset banned <add|remove|list>" + ChatColor.WHITE + " - Manage banned materials.");
+  player.sendMessage(ChatColor.YELLOW + "Note: Banned material placement will be allowed, but staff will be alerted."); // New note
  }
 
  /**
