@@ -1,4 +1,4 @@
-package net.Alexxiconify.alexxAutoWarn.AlexxAutoWarn; // Make sure to change this to your actual package name
+package net.Alexxiconify.alexxAutoWarn.AlexxsAutoWarn; // Make sure to change this to your actual package name
 
 import net.coreprotect.CoreProtect;
 import net.coreprotect.CoreProtectAPI;
@@ -33,7 +33,7 @@ import java.util.stream.Collectors;
 // e.g., getLogger().severe("World '" + worldName + "' not found for zone definition!");
 
 @SuppressWarnings("preview") // For String Templates if using Java < 21 with preview enabled
-public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecutor, TabCompleter {
+class AutoWarn extends JavaPlugin implements Listener, CommandExecutor, TabCompleter {
 
  private CoreProtectAPI coreProtectAPI; // Instance variable for CoreProtect API
 
