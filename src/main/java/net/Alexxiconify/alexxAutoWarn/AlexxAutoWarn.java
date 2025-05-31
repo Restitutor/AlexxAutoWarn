@@ -18,6 +18,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
+import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.player.PlayerBucketEmptyEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.ItemStack;
@@ -31,10 +32,11 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet; // Use HashSet for efficient material lookups
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.UUID;
+import java.util.Set; // Use Set for banned materials
 import java.util.stream.Collectors;
 
 // Note: The STR."..." syntax is a Java 21+ String Template feature.
@@ -123,6 +125,9 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
  // Stores all defined lava alert zones by their unique name
  private final Map<String, LavaZone> definedZones = new HashMap<>();
 
+ // Stores all banned materials
+ private final Set<Material> bannedMaterials = new HashSet<>();
+
  // Temporary storage for player position selections for specific zone names (old method)
  // Player UUID -> Zone Name -> Position Type (e.g., "pos1", "pos2") -> Location
  private final Map<UUID, Map<String, Map<String, Location>>> playerZoneSelections = new HashMap<>();
@@ -150,6 +155,7 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
   // Load configuration
   saveDefaultConfig(); // Creates config.yml if it doesn't exist
   loadZonesFromConfig();
+  loadBannedMaterialsFromConfig(); // Load banned materials
 
   // Register event listener
   Bukkit.getPluginManager().registerEvents(this, this);
@@ -164,6 +170,7 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
   } else {
    getLogger().info(STR."\{definedZones.size()} lava alert zone(s) loaded.");
   }
+  getLogger().info(STR."Currently banned materials: \{formatMaterialList(bannedMaterials)}");
  }
 
  @Override
@@ -173,6 +180,7 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
   playerWandPos1.clear();
   playerWandPos2.clear();
   definedZones.clear(); // Clear zones on disable
+  bannedMaterials.clear(); // Clear banned materials on disable
  }
 
  /**
@@ -243,6 +251,36 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
  }
 
  /**
+  * Loads banned materials from the plugin's config.yml.
+  */
+ private void loadBannedMaterialsFromConfig() {
+  bannedMaterials.clear(); // Clear existing materials before loading
+  FileConfiguration config = getConfig();
+  List<String> materialNames = config.getStringList("banned-materials");
+
+  for (String name : materialNames) {
+   try {
+    Material material = Material.valueOf(name.toUpperCase());
+    bannedMaterials.add(material);
+   } catch (IllegalArgumentException e) {
+    getLogger().warning(STR."Invalid material name '\{name}' found in config.yml banned-materials list. Skipping.");
+   }
+  }
+ }
+
+ /**
+  * Saves currently banned materials to the plugin's config.yml.
+  */
+ private void saveBannedMaterialsToConfig() {
+  FileConfiguration config = getConfig();
+  List<String> materialNames = bannedMaterials.stream()
+          .map(Enum::name) // Convert Material enum to its string name
+          .collect(Collectors.toList());
+  config.set("banned-materials", materialNames);
+  saveConfig();
+ }
+
+ /**
   * Attempts to get the CoreProtect API instance.
   * @return The CoreProtectAPI instance, or null if not found or not enabled.
   */
@@ -298,26 +336,50 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
   return meta != null && meta.getPersistentDataContainer().has(wandKey, PersistentDataType.STRING);
  }
 
+ /**
+  * Helper method to check if a location is within any defined zone and send a message.
+  * @param player The player performing the action.
+  * @param location The location of the action.
+  * @param material The material being placed/used.
+  * @return true if the action should be cancelled, false otherwise.
+  */
+ private boolean checkAndWarn(Player player, Location location, Material material) {
+  // Only proceed if the material is in the banned list
+  if (!bannedMaterials.contains(material)) {
+   return false;
+  }
+
+  for (LavaZone zone : definedZones.values()) {
+   if (zone.contains(location)) {
+    getLogger().info(STR."Player \{player.getName()} attempted to place \{material.name()} at \{formatLocation(location)} in protected zone '\{zone.getName()}'.");
+    player.sendMessage(ChatColor.RED + STR."You are not allowed to place \{material.name()} in zone '\{zone.getName()}'.");
+    // Optional: Log with CoreProtect if you have custom flags or reasons
+    // if (this.coreProtectAPI != null) {
+    //    this.coreProtectAPI.logPlacement(player.getName(), location, material, null);
+    // }
+    return true; // Action should be cancelled
+   }
+  }
+  return false; // Action should not be cancelled
+ }
+
  @EventHandler
  public void onPlayerEmptyBucket(PlayerBucketEmptyEvent event) {
-  Player player = event.getPlayer();
-  Material bucketContent = event.getBucket();
-  Location placedLocation = event.getBlockClicked().getRelative(event.getBlockFace()).getLocation();
+  // Check if the bucket content (LAVA_BUCKET) is in the banned list
+  if (bannedMaterials.contains(event.getBucket())) {
+   Location placedLocation = event.getBlockClicked().getRelative(event.getBlockFace()).getLocation();
+   if (checkAndWarn(event.getPlayer(), placedLocation, event.getBucket())) {
+    event.setCancelled(true);
+   }
+  }
+ }
 
-  if (bucketContent == Material.LAVA_BUCKET) {
-   // Check if the placed location is within any defined lava zone
-   for (LavaZone zone : definedZones.values()) {
-    if (zone.contains(placedLocation)) {
-     getLogger().info(STR."Player \{player.getName()} used a LAVA bucket at \{formatLocation(placedLocation)} in protected zone '\{zone.getName()}'.");
-     player.sendMessage(ChatColor.RED + "You are not allowed to place lava in zone '" + zone.getName() + "'.");
-     event.setCancelled(true);
-
-     // Optional: Log with CoreProtect if you have custom flags or reasons
-     // if (this.coreProtectAPI != null) {
-     //    this.coreProtectAPI.logPlacement(player.getName(), placedLocation, Material.LAVA, null);
-     // }
-     return; // Only need to cancel once if found in any zone
-    }
+ @EventHandler
+ public void onBlockPlace(BlockPlaceEvent event) {
+  // Check if the placed block's material is in the banned list
+  if (bannedMaterials.contains(event.getBlock().getType())) {
+   if (checkAndWarn(event.getPlayer(), event.getBlock().getLocation(), event.getBlock().getType())) {
+    event.setCancelled(true);
    }
   }
  }
@@ -327,26 +389,41 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
   Player player = event.getPlayer();
   ItemStack handItem = event.getItem(); // Get item in hand
 
-  if (!isWand(handItem)) {
-   return; // Not our wand, ignore
+  // Handle wand interactions
+  if (isWand(handItem)) {
+   // Prevent block breaking/placement with the wand
+   event.setCancelled(true);
+
+   if (event.getAction() == Action.LEFT_CLICK_BLOCK) {
+    if (event.getClickedBlock() != null) {
+     playerWandPos1.put(player.getUniqueId(), event.getClickedBlock().getLocation());
+     player.sendMessage(ChatColor.GREEN + "Position 1 set: " + formatLocation(event.getClickedBlock().getLocation()));
+    } else {
+     player.sendMessage(ChatColor.YELLOW + "You must click on a block to set Position 1.");
+    }
+   } else if (event.getAction() == Action.RIGHT_CLICK_BLOCK) {
+    if (event.getClickedBlock() != null) {
+     playerWandPos2.put(player.getUniqueId(), event.getClickedBlock().getLocation());
+     player.sendMessage(ChatColor.GREEN + "Position 2 set: " + formatLocation(event.getClickedBlock().getLocation()));
+    } else {
+     player.sendMessage(ChatColor.YELLOW + "You must click on a block to set Position 2.");
+    }
+   }
+   return; // Don't process other interactions if it's the wand
   }
 
-  // Prevent block breaking/placement with the wand
-  event.setCancelled(true);
-
-  if (event.getAction() == Action.LEFT_CLICK_BLOCK) {
-   if (event.getClickedBlock() != null) {
-    playerWandPos1.put(player.getUniqueId(), event.getClickedBlock().getLocation());
-    player.sendMessage(ChatColor.GREEN + "Position 1 set: " + formatLocation(event.getClickedBlock().getLocation()));
-   } else {
-    player.sendMessage(ChatColor.YELLOW + "You must click on a block to set Position 1.");
-   }
-  } else if (event.getAction() == Action.RIGHT_CLICK_BLOCK) {
-   if (event.getClickedBlock() != null) {
-    playerWandPos2.put(player.getUniqueId(), event.getClickedBlock().getLocation());
-    player.sendMessage(ChatColor.GREEN + "Position 2 set: " + formatLocation(event.getClickedBlock().getLocation()));
-   } else {
-    player.sendMessage(ChatColor.YELLOW + "You must click on a block to set Position 2.");
+  // Handle placement of items that spawn entities (like TNT Minecart)
+  if (handItem != null && bannedMaterials.contains(handItem.getType())) {
+   if (event.getAction() == Action.RIGHT_CLICK_BLOCK) {
+    // For TNT Minecart, it's placed on rails
+    if (handItem.getType() == Material.TNT_MINECART && event.getClickedBlock() != null && event.getClickedBlock().getType().name().contains("RAIL")) {
+     // The location where the minecart would be placed
+     Location placementLocation = event.getClickedBlock().getLocation().add(0, 1, 0); // Minecart spawns above the rail
+     if (checkAndWarn(player, placementLocation, Material.TNT_MINECART)) {
+      event.setCancelled(true);
+     }
+    }
+    // Add more specific checks for other entity-spawning items if needed
    }
   }
  }
@@ -357,12 +434,14 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
   if (!(sender instanceof Player player)) {
    if (args.length == 1 && args[0].equalsIgnoreCase("reload")) {
     loadZonesFromConfig();
-    sender.sendMessage(ChatColor.GREEN + "LavaZoneDetector zone configuration reloaded.");
+    loadBannedMaterialsFromConfig(); // Reload banned materials
+    sender.sendMessage(ChatColor.GREEN + "LavaZoneDetector configuration reloaded.");
     if (definedZones.isEmpty()) {
      sender.sendMessage(ChatColor.YELLOW + "Warning: No zones defined in config or some worlds are invalid.");
     } else {
      sender.sendMessage(ChatColor.AQUA + STR."Successfully loaded \{definedZones.size()} zone(s).");
     }
+    sender.sendMessage(ChatColor.AQUA + STR."Currently banned materials: \{formatMaterialList(bannedMaterials)}");
     return true;
    }
    sender.sendMessage("This command can only be run by a player (except for /lzdset reload).");
@@ -503,18 +582,77 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
 
    case "reload":
     loadZonesFromConfig();
-    player.sendMessage(ChatColor.GREEN + "LavaZoneDetector zone configuration reloaded.");
+    loadBannedMaterialsFromConfig(); // Reload banned materials on reload command
+    player.sendMessage(ChatColor.GREEN + "LavaZoneDetector configuration reloaded.");
     if (definedZones.isEmpty()) {
      player.sendMessage(ChatColor.YELLOW + "Warning: No zones defined in config or some worlds are invalid.");
     } else {
      player.sendMessage(ChatColor.AQUA + STR."Successfully loaded \{definedZones.size()} zone(s).");
     }
+    player.sendMessage(ChatColor.AQUA + STR."Currently banned materials: \{formatMaterialList(bannedMaterials)}");
     break;
 
    case "clearwand": // New command to clear wand selections
     playerWandPos1.remove(player.getUniqueId());
     playerWandPos2.remove(player.getUniqueId());
     player.sendMessage(ChatColor.GREEN + "Your wand selections have been cleared.");
+    break;
+
+   case "banned": // New subcommand for banned materials management
+    if (args.length < 2) {
+     player.sendMessage(ChatColor.RED + "Usage: /lzdset banned <add|remove|list> [material_name]");
+     return true;
+    }
+    String bannedAction = args[1].toLowerCase();
+    switch (bannedAction) {
+     case "add":
+      if (args.length < 3) {
+       player.sendMessage(ChatColor.RED + "Usage: /lzdset banned add <material_name>");
+       return true;
+      }
+      String materialToAdd = args[2].toUpperCase();
+      try {
+       Material material = Material.valueOf(materialToAdd);
+       if (bannedMaterials.add(material)) {
+        saveBannedMaterialsToConfig();
+        player.sendMessage(ChatColor.GREEN + STR."Material '\{material.name()}' added to banned list.");
+       } else {
+        player.sendMessage(ChatColor.YELLOW + STR."Material '\{material.name()}' is already in the banned list.");
+       }
+      } catch (IllegalArgumentException e) {
+       player.sendMessage(ChatColor.RED + STR."Invalid material name: '\{materialToAdd}'. Please use a valid Minecraft material name (e.g., LAVA_BUCKET, TNT).");
+      }
+      break;
+     case "remove":
+      if (args.length < 3) {
+       player.sendMessage(ChatColor.RED + "Usage: /lzdset banned remove <material_name>");
+       return true;
+      }
+      String materialToRemove = args[2].toUpperCase();
+      try {
+       Material material = Material.valueOf(materialToRemove);
+       if (bannedMaterials.remove(material)) {
+        saveBannedMaterialsToConfig();
+        player.sendMessage(ChatColor.GREEN + STR."Material '\{material.name()}' removed from banned list.");
+       } else {
+        player.sendMessage(ChatColor.YELLOW + STR."Material '\{material.name()}' is not in the banned list.");
+       }
+      } catch (IllegalArgumentException e) {
+       player.sendMessage(ChatColor.RED + STR."Invalid material name: '\{materialToRemove}'. Please use a valid Minecraft material name.");
+      }
+      break;
+     case "list":
+      if (bannedMaterials.isEmpty()) {
+       player.sendMessage(ChatColor.YELLOW + "No materials are currently banned.");
+      } else {
+       player.sendMessage(ChatColor.AQUA + "--- Banned Materials ---");
+       player.sendMessage(ChatColor.WHITE + formatMaterialList(bannedMaterials));
+      }
+      break;
+     default:
+      player.sendMessage(ChatColor.RED + "Unknown 'banned' subcommand. Usage: /lzdset banned <add|remove|list>");
+      break;
+    }
     break;
 
    default:
@@ -531,7 +669,7 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
   }
 
   if (args.length == 1) {
-   List<String> subCommands = new ArrayList<>(List.of("wand", "pos1", "pos2", "define", "remove", "info", "list", "reload", "clearwand"));
+   List<String> subCommands = new ArrayList<>(List.of("wand", "pos1", "pos2", "define", "remove", "info", "list", "reload", "clearwand", "banned"));
    return subCommands.stream()
            .filter(s -> s.startsWith(args[0].toLowerCase()))
            .collect(Collectors.toList());
@@ -541,6 +679,25 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
     // Suggest existing zone names for these commands
     return definedZones.keySet().stream()
             .filter(s -> s.toLowerCase().startsWith(args[1].toLowerCase()))
+            .collect(Collectors.toList());
+   } else if (subCommand.equals("banned")) {
+    return Arrays.asList("add", "remove", "list").stream()
+            .filter(s -> s.startsWith(args[1].toLowerCase()))
+            .collect(Collectors.toList());
+   }
+  } else if (args.length == 3 && args[0].equalsIgnoreCase("banned")) {
+   String bannedAction = args[1].toLowerCase();
+   if (bannedAction.equals("add")) {
+    // Suggest all possible materials for 'add'
+    return Arrays.stream(Material.values())
+            .map(Enum::name)
+            .filter(s -> s.startsWith(args[2].toUpperCase()))
+            .collect(Collectors.toList());
+   } else if (bannedAction.equals("remove")) {
+    // Suggest only currently banned materials for 'remove'
+    return bannedMaterials.stream()
+            .map(Enum::name)
+            .filter(s -> s.startsWith(args[2].toUpperCase()))
             .collect(Collectors.toList());
    }
   }
@@ -561,7 +718,8 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
   player.sendMessage(ChatColor.GOLD + "/lzdset info [zone_name]" + ChatColor.WHITE + " - Show info for a specific zone or all zones.");
   player.sendMessage(ChatColor.GOLD + "/lzdset list" + ChatColor.WHITE + " - List all defined zones.");
   player.sendMessage(ChatColor.GOLD + "/lzdset clearwand" + ChatColor.WHITE + " - Clear your wand selections.");
-  player.sendMessage(ChatColor.GOLD + "/lzdset reload" + ChatColor.WHITE + " - Reload all zones from config.");
+  player.sendMessage(ChatColor.GOLD + "/lzdset reload" + ChatColor.WHITE + " - Reload all zones and banned materials from config.");
+  player.sendMessage(ChatColor.GOLD + "/lzdset banned <add|remove|list>" + ChatColor.WHITE + " - Manage banned materials.");
  }
 
  /**
@@ -572,5 +730,19 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
  private String formatLocation(Location loc) {
   if (loc == null) return "N/A";
   return String.format("X: %.1f, Y: %.1f, Z: %.1f (World: %s)", loc.getX(), loc.getY(), loc.getZ(), loc.getWorld().getName());
+ }
+
+ /**
+  * Formats a set of Materials into a comma-separated string.
+  * @param materials The set of materials to format.
+  * @return A string representation of the materials.
+  */
+ private String formatMaterialList(Set<Material> materials) {
+  if (materials.isEmpty()) {
+   return "None";
+  }
+  return materials.stream()
+          .map(Enum::name)
+          .collect(Collectors.joining(", "));
  }
 }
