@@ -9,7 +9,7 @@ zones:
     world: "world"
     corner1:
       x: 0.0
-      y: 64.0
+      y: -64.0
       z: 0.0
     corner2:
       x: 100.0
@@ -69,7 +69,7 @@ messages:
   player-zone-info-header: "&b--- AutoInform Zone: {zone_name} ---"
   player-zone-info-world: "&6World: &f{world_name}"
   player-zone-info-corner1: "&6Corner 1: &f{corner1_loc}"
-  player-zone-info-corner2: "&6Corner 2: &f{corner2_loc}"
+  player-zone-info-corner2: "&6Corner 2: &f{corner2_loc}" # CORRECTED: Was "&6Corner 62:..."
   player-zone-info-default-action: "&6Default Action: &f{default_action}"
   player-zone-info-material-actions: "&6Material Actions:"
   player-zone-info-material-action-entry: "&f  - {material}: {action}"
