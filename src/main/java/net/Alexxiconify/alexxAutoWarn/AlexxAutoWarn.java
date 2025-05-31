@@ -340,7 +340,7 @@ public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecut
   * @param player The player performing the action.
   * @param location The location of the action.
   * @param material The material being placed/used.
-  * @return true if the action should be cancelled, false otherwise.
+  * @return true if the action should be canceled, false otherwise.
   */
  private boolean checkAndWarn(Player player, Location location, Material material) {
   if (!bannedMaterials.contains(material)) {
