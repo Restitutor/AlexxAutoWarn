@@ -109,7 +109,7 @@ class LavaZone {
 }
 
 @SuppressWarnings("preview") // For String Templates if using Java < 21 with preview enabled
-public class AutoWarn extends JavaPlugin implements Listener, CommandExecutor, TabCompleter {
+public class AlexxAutoWarn extends JavaPlugin implements Listener, CommandExecutor, TabCompleter {
 
  private CoreProtectAPI coreProtectAPI; // Instance variable for CoreProtect API
 

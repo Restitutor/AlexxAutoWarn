@@ -39,6 +39,18 @@
                         <goals>
                             <goal>shade</goal>
                         </goals>
+                        <configuration>
+                        <createDependencyReducedPom>false</createDependencyReducedPom>
+                        <filters>
+                            <filter>
+                                <artifact>net.coreprotect:coreprotect</artifact>
+                                <excludes>
+                                    <exclude>plugin.yml</exclude>
+                                    <exclude>META-INF/MANIFEST.MF</exclude>
+                                </excludes>
+                            </filter>
+                        </filters>
+                    </configuration>
                     </execution>
                 </executions>
             </plugin>
