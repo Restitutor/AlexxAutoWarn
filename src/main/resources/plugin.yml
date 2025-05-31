@@ -4,11 +4,11 @@ version: '1.0.0-SNAPSHOT'
 main: net.Alexxiconify.alexxAutoWarn.AlexxsAutoWarn.AlexxAutoWarn
 api-version: '1.21'
 commands:
-  lzdset:
-    description: Manages LavaZoneDetector zones.
-    usage: /lzdset <subcommand>
-    permission: lavazonedetector.admin.set
+  ainformset: # Renamed from lzdset
+    description: Manages AutoInform zones and banned materials.
+    usage: /ainformset <subcommand>
+    permission: autoinform.admin.set # Renamed permission
 permissions:
-  lavazonedetector.admin.set:
-    description: Allows access to zone setting commands.
+  autoinform.admin.set: # Renamed permission
+    description: Allows access to AutoInform zone and banned material setting commands.
     default: op
