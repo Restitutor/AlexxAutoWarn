@@ -1,4 +1,14 @@
+#file: noinspection SpellCheckingInspection
 name: AlexxAutoWarn
 version: '1.0.0-SNAPSHOT'
-main: net.Alexxiconify.alexxAutoWarn.AlexxAutoWarn
+main: net.Alexxiconify.alexxAutoWarn.AlexxsAutoWarn.AlexxAutoWarn
 api-version: '1.21'
+commands:
+  lzdset:
+    description: Manages LavaZoneDetector zones.
+    usage: /lzdset <subcommand>
+    permission: lavazonedetector.admin.set
+permissions:
+  lavazonedetector.admin.set:
+    description: Allows access to zone setting commands.
+    default: op
