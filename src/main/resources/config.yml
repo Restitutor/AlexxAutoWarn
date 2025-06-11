@@ -1,33 +1,100 @@
-# AutoInform Configuration
-
-# General Plugin Settings
+# -------------------------------------------------- #
+#                  AutoWarn Settings                 #
+# -------------------------------------------------- #
 settings:
-  # Configure the Zone Selector Wand item
+  # If true, the plugin will monitor and enforce rules on container access (chests, furnaces, etc.).
+  monitor-chest-access: true
+  # If true, all ALLOWED actions will be logged to console for debugging.
+  debug-log-allowed-actions: false
+  # A list of materials that are banned everywhere, regardless of zone rules.
+  globally-banned-materials:
+    - TNT
+    - LAVA_BUCKET
+
+# -------------------------------------------------- #
+#                     Messages                       #
+#   Uses the MiniMessage format for all messages.    #
+#   https://docs.adventure.kyori.net/minimessage     #
+# -------------------------------------------------- #
+messages:
+  plugin-prefix: "<gray>[<#FFA500>AutoWarn</#FFA500>]</gray> "
+
+  # Error Messages
+  error:
+    player-only: "<red>This command can only be run by a player."
+    no-permission: "<red>You do not have permission to use this command."
+    invalid-zone-name: "<red>Invalid zone name. Must be 3-32 alphanumeric characters, underscores, or dashes."
+    zone-not-found: "<red>Zone '<zone>' not found."
+    define-no-selection: "<red>You must set both position 1 and 2 before defining a zone."
+    usage:
+      define: "<red>Usage: /autowarn define <zone_name>"
+      remove: "<red>Usage: /autowarn remove <zone_name>"
+      info: "<red>Usage: /autowarn info <zone_name>"
+      defaultaction: "<red>Usage: /autowarn defaultaction <zone_name> <action>"
+      setaction: "<red>Usage: /autowarn setaction <zone_name> <material> <action>"
+      removeaction: "<red>Usage: /autowarn removeaction <zone_name> <material>"
+      banned: "<red>Usage: /autowarn banned [add|remove|list]"
+      banned-add: "<red>Usage: /autowarn banned add <material>"
+      banned-remove: "<red>Usage: /autowarn banned remove <material>"
+    invalid-action: "<red>Invalid action. Must be DENY, ALERT, or ALLOW."
+    invalid-material: "<red>Invalid material name."
+    no-material-action: "<yellow>No specific action found for that material in this zone."
+    material-already-banned: "<yellow>That material is already globally banned."
+    material-not-banned: "<yellow>That material is not currently globally banned."
+
+
+  # Action Feedback
+  action:
+    denied: "<red>You cannot do that here! (Zone: <zone>)"
+    alert: "<yellow>Alert! <player> used <material> in zone <zone> at <location>."
+
+  # Wand Feedback
   wand:
-    material: WOODEN_AXE # The Bukkit Material name for the wand item (e.g., WOODEN_AXE, BLAZE_ROD)
-    display-name: "&6&lAutoInform Zone Selector Wand" # Display name of the wand
-    lore: # Lore lines for the wand
-      - "&7Left-click: Set Position 1"
-      - "&7Right-click: Set Position 2"
+    name: "<gold>AutoWarn Selection Wand"
+    lore1: "<gray>Left-click to set position 1."
+    lore2: "<gray>Right-click to set position 2."
+    pos1-set: "<green>Position 1 set to <white><coords></white>."
+    pos2-set: "<green>Position 2 set to <white><coords></white>."
 
-  # CoreProtect Integration Settings
-  coreprotect:
-    # Time in seconds to look back for block placement history when checking chests.
-    # A higher value means more history, but might be slower. (e.g., 600 seconds = 10 minutes)
-    lookup-time-seconds: 600
+  # Command Feedback
+  command:
+    wand-given: "<green>You have been given the selection wand."
+    pos-set: "<green>Position <pos> set to <white><coords></white>."
+    define-success: "<green>Successfully defined zone '<gold><zone></gold>'."
+    remove-success: "<green>Successfully removed zone '<gold><zone></gold>'."
+    reload-success: "<green>AutoWarn configuration and zones have been reloaded."
+    list-empty: "<yellow>There are no zones defined yet."
+    list-header: "<gold>AutoWarn Zones (<count>):"
+    defaultaction-success: "<green>Default action for zone '<gold><zone></gold>' set to <action>."
+    setaction-success: "<green>Action for <material> in zone '<gold><zone></gold>' set to <action>."
+    removeaction-success: "<green>Action for <material> removed from zone '<gold><zone></gold>'."
+    banned-add-success: "<green><material> added to globally banned materials."
+    banned-remove-success: "<green><material> removed from globally banned materials." # THIS LINE WAS THE ISSUE
+    banned-list-empty: "<yellow>There are no globally banned materials."
+    banned-list-header: "<gold>Globally Banned Materials (<count>):"
+    # Help messages (UPDATED TO INCLUDE ALL MISSING ENTRIES)
+    help-header: "<gold>--- AutoWarn Help ---"
+    help:
+      wand: "<yellow>/aw wand</yellow> <gray>- Gives you the selection wand."
+      pos: "<yellow>/aw pos1|pos2</yellow> <gray>- Sets a selection point."
+      define: "<yellow>/aw define <zone_name></yellow> <gray>- Defines a new zone."
+      remove: "<yellow>/aw remove <zone_name></yellow> <gray>- Removes an existing zone."
+      list: "<yellow>/aw list</yellow> <gray>- Lists all defined zones."
+      info: "<yellow>/aw info <zone_name></yellow> <gray>- Shows info about a zone."
+      defaultaction: "<yellow>/aw defaultaction <zone_name> <action></yellow> <gray>- Sets default action for a zone."
+      setaction: "<yellow>/aw setaction <zone_name> <material> <action></yellow> <gray>- Sets material action in a zone."
+      removeaction: "<yellow>/aw removeaction <zone_name> <material></yellow> <gray>- Removes material action from a zone."
+      banned: "<yellow>/aw banned [add|remove|list]</yellow> <gray>- Manages globally banned materials."
+      reload: "<yellow>/aw reload</yellow> <gray>- Reloads plugin configuration."
 
-  # Default settings for new zones created via commands (if not explicitly specified)
-  default-new-zone-settings:
-    default-placement-action: ALERT # Default action for materials not explicitly defined for placement (DENY, ALERT, ALLOW)
-    default-usage-action: ALERT # Default action for materials not explicitly defined for usage (DENY, ALERT, ALLOW)
-    monitor-chest-access: false # Default for whether to monitor chest access by non-placers
-
-# This section defines multiple protected zones.
-# Each zone can be configured with specific actions (DENY, ALERT, ALLOW)
-# for different materials, and a default action for others.
+# -------------------------------------------------- #
+#                   Zone Definitions                 #
+#  This section is managed by the plugin. Do not     #
+#          edit manually unless you know what        #
+#                  you are doing!                    #
+# -------------------------------------------------- #
 zones:
-  # Example Zone 1: Default action is ALERT, but LAVA_BUCKET is DENIED
-  zone_alpha:
+  example_zone:
     world: "world"
     corner1:
       x: 0.0
@@ -35,132 +102,9 @@ zones:
       z: 0.0
     corner2:
       x: 100.0
-      y: 100.0
-      z: 100.0
-    # Default action for materials in this zone if not specified in material-actions.
-    # Options: DENY, ALERT, ALLOW
-    default-material-action: ALERT
-
-    # Specific actions for materials within this zone.
-    # These override the default-material-action for the listed materials.
-    material-actions:
-      LAVA_BUCKET: DENY   # Deny placement of lava in this zone
-      TNT: ALERT          # Only alert staff for TNT placement
-      WATER_BUCKET: ALLOW # Allow water placement, even if it's in the global banned-materials list
-
-    # Default action for item *usage* in this zone if not specified in usage-actions.
-    # Options: DENY, ALERT, ALLOW
-    default-usage-action: ALERT
-
-    # Specific actions for item *usage* within this zone.
-    # These override the default-usage-action for the listed materials.
-    usage-actions:
-      FLINT_AND_STEEL: DENY
-      ENDER_PEARL: ALERT
-      POTION: ALERT # Generic potion usage
-
-    # Whether to monitor chest access by players other than the placer.
-    monitor-chest-access: true
-
-  # Example Zone 2: Default action is DENY
-  zone_beta:
-    world: "world_nether"
-    corner1:
-      x: -50.0
-      y: 30.0
-      z: -50.0
-    corner2:
-      x: 50.0
       y: 80.0
-      z: 50.0
-    default-material-action: DENY
+      z: 100.0
+    default-action: "ALERT"
     material-actions:
-      FIRE: ALERT
-    default-usage-action: ALERT
-    monitor-chest-access: false
-
-# This section defines a list of materials that are generally considered "banned" for *placement*.
-# Zones will only apply actions to materials present in this global list,
-# unless a specific 'ALLOW' action is defined within a zone's material-actions.
-banned-materials:
-  - LAVA_BUCKET
-  - TNT
-  - TNT_MINECART
-  - FIRE
-  - WATER_BUCKET
-
-# This section defines a list of materials that are generally considered "banned" for *usage*.
-# Zones will only apply actions to materials present in this global list,
-# unless a specific 'ALLOW' action is defined within a zone's usage-actions.
-banned-usages:
-  - FLINT_AND_STEEL
-  - POTION
-  - ENDER_PEARL
-  - FIRE_CHARGE
-
-# Customizable messages for the plugin.
-messages:
-  player-denied-placement: "&cYou are not allowed to place {material} here!"
-  player-denied-usage: "&cYou are not allowed to use {material} here!"
-  player-denied-chest-access: "&cYou are not allowed to access chests placed by others here!"
-  player-wand-pos1-set: "&aPosition 1 set: {location}"
-  player-wand-pos2-set: "&aPosition 2 set: {location}"
-  player-wand-click-block: "&eYou must click on a block to set Position {pos_num}."
-  player-wand-received: "&aYou have received the AutoInform Zone Selector Wand!"
-  player-positions-same-world: "&cBoth positions must be in the same world."
-  player-define-zone-success: "&aAutoInform zone '{zone_name}' defined and saved for world '{world_name}'."
-  player-define-zone-corners: "&7Corner 1: {corner1_loc}\n&7Corner 2: {corner2_loc}"
-  player-define-zone-default-placement-action: "&7Default Placement Action: {default_action}"
-  player-define-zone-default-usage-action: "&7Default Usage Action: {default_action}"
-  player-zone-removed: "&aZone '{zone_name}' has been removed."
-  player-zone-not-found: "&eZone '{zone_name}' not found."
-  player-no-zones-defined: "&eNo AutoInform zones are currently defined."
-  player-all-zones-header: "&b--- All AutoInform Zones ---"
-  player-zone-info-header: "&b--- AutoInform Zone: {zone_name} ---"
-  player-zone-info-world: "&6World: &f{world_name}"
-  player-zone-info-corner1: "&6Corner 1: &f{corner1_loc}"
-  player-zone-info-corner2: "&6Corner 2: &f{corner2_loc}"
-  player-zone-info-default-placement-action: "&6Default Placement Action: &f{default_action}"
-  player-zone-info-default-usage-action: "&6Default Usage Action: &f{default_action}"
-  player-zone-info-monitor-chest-access: "&6Monitor Chest Access: &f{status}"
-  player-zone-info-material-actions: "&6Placement Actions:"
-  player-zone-info-material-action-entry: "&f  - {material}: {action}"
-  player-zone-info-usage-actions: "&6Usage Actions:"
-  player-zone-info-usage-action-entry: "&f  - {material}: {action}"
-  player-defined-zones-header: "&b--- Defined AutoInform Zones ---"
-  player-wand-selections-cleared: "&aYour wand selections have been cleared."
-  player-material-added-banned: "&aMaterial '{material}' added to banned list."
-  player-material-already-banned: "&eMaterial '{material}' is already in the banned list."
-  player-invalid-material-name: "&cInvalid material name: '{material}'. Please use a valid Minecraft material name (e.g., LAVA_BUCKET, TNT)."
-  player-material-removed-banned: "&aMaterial '{material}' removed from banned list."
-  player-material-not-banned: "&eMaterial '{material}' is not in the banned list."
-  player-no-materials-banned: "&eNo materials are currently banned."
-  player-banned-materials-header: "&b--- Banned Materials (Placement) ---"
-  player-banned-usages-header: "&b--- Banned Materials (Usage) ---"
-  player-default-action-updated: "&aDefault {type} action for zone '{zone_name}' set to {action}."
-  player-material-action-updated: "&a{type} action for {material} in zone '{zone_name}' set to {action}."
-  player-invalid-action-type: "&cInvalid action type. Please use DENY, ALERT, or ALLOW."
-  player-no-permission: "&cYou do not have permission to use this command."
-  player-command-usage: "&cUsage: {usage}"
-  player-console-only-reload: "&cThis command can only be run by a player (except for /{command_name} reload)."
-  staff-alert-placement: "&c[AutoInform] &e{player} placed {material} in zone '{zone_name}' at {x},{y},{z}. Action: {action_color}{action_status}."
-  staff-alert-usage: "&c[AutoInform] &e{player} used {material} in zone '{zone_name}' at {x},{y},{z}. Action: {action_color}{action_status}."
-  staff-alert-chest-access: "&c[AutoInform] &e{player} accessed chest placed by {placer} in zone '{zone_name}' at {x},{y},{z}. Action: {action_color}{action_status}."
-  plugin-config-reloaded: "&aAutoInform configuration reloaded."
-  plugin-warning-no-zones: "&eWarning: No zones defined in config or some worlds are invalid."
-  plugin-success-zones-loaded: "&bSuccessfully loaded {count} zone(s)."
-  plugin-current-banned-materials: "&bCurrently banned materials (Placement): {materials}"
-  plugin-current-banned-usages: "&bCurrently banned materials (Usage): {materials}"
-  plugin-enabled: "AutoInform enabled!"
-  plugin-disabled: "AutoInform disabled!"
-  plugin-coreprotect-not-found: "CoreProtect API not found! Related functionality might be affected."
-  plugin-coreprotect-hooked: "CoreProtect API hooked successfully."
-  plugin-coreprotect-api-disabled: "CoreProtect API is not enabled."
-  plugin-coreprotect-api-outdated: "CoreProtect API version is outdated (found: {version}). Please update CoreProtect."
-  plugin-invalid-zone-config: "Invalid configuration for zone '{zone_name}'. Skipping."
-  plugin-world-not-found: "World '{world_name}' for zone '{zone_name}' not found! This zone will not be active."
-  plugin-error-loading-zone-coords: "Error loading coordinates for zone '{zone_name}': {message}. Skipping."
-  plugin-invalid-banned-material-config: "Invalid material name '{name}' found in config.yml banned-materials list. Skipping."
-  plugin-no-zones-in-config: "No 'zones' section found in config.yml. No zones loaded."
-  plugin-coreprotect-lookup-failed: "CoreProtect lookup failed for block at {location}: {message}"
-  plugin-coreprotect-no-placer: "Could not determine placer for block at {location} using CoreProtect."
+      DIAMOND_BLOCK: "DENY"
+      LAVA: "DENY"

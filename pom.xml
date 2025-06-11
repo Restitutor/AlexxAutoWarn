@@ -26,7 +26,6 @@
                 <configuration>
                     <source>21</source>
                     <target>21</target>
-                    <compilerArgs>--enable-preview</compilerArgs>
                 </configuration>
             </plugin>
             <plugin>
@@ -40,17 +39,8 @@
                             <goal>shade</goal>
                         </goals>
                         <configuration>
-                        <createDependencyReducedPom>false</createDependencyReducedPom>
-                        <filters>
-                            <filter>
-                                <artifact>net.coreprotect:coreprotect</artifact>
-                                <excludes>
-                                    <exclude>plugin.yml</exclude>
-                                    <exclude>META-INF/MANIFEST.MF</exclude>
-                                </excludes>
-                            </filter>
-                        </filters>
-                    </configuration>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>
@@ -73,22 +63,29 @@
             <url>https://oss.sonatype.org/content/groups/public/</url>
         </repository>
         <repository>
-        <id>coreprotect-maven</id>
-        <url>https://maven.playpro.com</url>
-    </repository>
+            <id>coreprotect-maven</id>
+            <url>https://maven.playpro.com</url>
+        </repository>
     </repositories>
 
     <dependencies>
         <dependency>
-        <groupId>net.coreprotect</groupId>
-        <artifactId>coreprotect</artifactId>
-        <version>22.4</version>
-    </dependency>
+            <groupId>net.coreprotect</groupId>
+            <artifactId>coreprotect</artifactId>
+            <version>22.4</version>
+            <scope>provided</scope>
+        </dependency>
         <dependency>
             <groupId>io.papermc.paper</groupId>
             <artifactId>paper-api</artifactId>
             <version>1.21.4-R0.1-SNAPSHOT</version>
             <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.jetbrains</groupId>
+            <artifactId>annotations</artifactId>
+            <version>24.0.1</version>
+            <scope>compile</scope>
         </dependency>
     </dependencies>
 </project>
